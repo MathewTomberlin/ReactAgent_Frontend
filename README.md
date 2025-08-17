@@ -42,6 +42,7 @@ reactagent-frontend/
 ├── vite.config.ts   # Vite configuration
 ├── tailwind.config.js # Tailwind CSS configuration
 ├── postcss.config.js # PostCSS configuration
+├── tsconfig.json    # Main TypeScript configuration
 ├── cloudbuild.yaml  # Cloud Build configuration
 ├── package.json     # Project dependencies
 └── README.md        # Quick start guide
