@@ -1,0 +1,22 @@
+# cloudbuild.yaml
+# Reusable: pass _MODE (staging|production) and _BUCKET (gs://bucket-name) via trigger substitutions.
+# Requires Cloud Build service account to have storage.objectAdmin on the bucket.
+
+substitutions:
+  _MODE: "production"
+  _BUCKET: "gs://REPLACE_ME"
+
+steps:
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['ci']
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['run', 'build', '--', '--mode=${_MODE}']
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['-m', 'rsync', '-r', '-d', 'dist', '${_BUCKET}']
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['-m', 'setmeta', '-h', 'Cache-Control:public, max-age=31536000, immutable', '${_BUCKET}/assets/**']
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['-m', 'setmeta', '-h', 'Cache-Control:no-cache', '${_BUCKET}/index.html']
+
+options:
+  logging: CLOUD_LOGGING_ONLY
