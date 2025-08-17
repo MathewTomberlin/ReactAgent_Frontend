@@ -4,7 +4,7 @@
 
 substitutions:
   _MODE: "production"
-  _BUCKET: "gs://reactagent-frontend-staging-1755407769"
+  _BUCKET: "gs://reactagent-frontend-prod-1755407790"
 
 steps:
   - name: 'gcr.io/cloud-builders/npm'
