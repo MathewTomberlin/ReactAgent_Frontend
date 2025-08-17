@@ -9,18 +9,21 @@ interface Message {
 
 interface AppState {
     messages: Message[];
+    isLoading: boolean;
     addUserMessage: (message: string) => void;
     sendToAgent: (text:string) => void;
 }
 
 const AppContext = createContext<AppState>({
     messages:[], 
+    isLoading: false,
     addUserMessage:()=>{},
     sendToAgent:()=>{},
 });
 
 export const AppProvider = ({ children }:{children:ReactNode}) => {
     const [messages, setMessages] = useState<Message[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const addUserMessage = (text:string) => {
         setMessages(prev => [...prev, {sender:"user",text }]);
@@ -28,12 +31,21 @@ export const AppProvider = ({ children }:{children:ReactNode}) => {
 
     const sendToAgent = async (text:string) => {
         addUserMessage(text);
-        const response = await sendMessage(text);
-        setMessages(prev => [...prev, {sender:"agent", text:response.reply}]);
+        setIsLoading(true);
+        
+        try {
+            const response = await sendMessage(text);
+            setMessages(prev => [...prev, {sender:"agent", text:response.reply}]);
+        } catch (error) {
+            console.error('Error sending message:', error);
+            setMessages(prev => [...prev, {sender:"agent", text:"Sorry, I encountered an error. Please try again."}]);
+        } finally {
+            setIsLoading(false);
+        }
     }
 
     return (
-        <AppContext.Provider value={{messages, addUserMessage, sendToAgent}}>
+        <AppContext.Provider value={{messages, isLoading, addUserMessage, sendToAgent}}>
             {children}
         </AppContext.Provider>
     );
