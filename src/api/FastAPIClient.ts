@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_BASE; // from .env.[mode] files
+// Use environment variable or fallback to localhost for development
+const BASE_URL = import.meta.env.VITE_API_BASE || "http://localhost:8080";
 
 export const sendMessage = async (message:string) => {
     try {
