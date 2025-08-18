@@ -4,11 +4,14 @@ import './index.css'
 import App from './App.tsx'
 
 import { AppProvider } from "./context/AppContext";
+import { SettingsProvider } from "./context/SettingsContext";
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppProvider>
-      <App />
+      <SettingsProvider>
+        <App />
+      </SettingsProvider>
     </AppProvider>
   </StrictMode>,
 )

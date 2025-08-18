@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from './context/AppContext'
+import { useSettings } from './context/SettingsContext'
+import { CollapsibleGroup } from './components/CollapsibleGroup'
+import { ChatSettings } from './components/ChatSettings'
+import { CacheStatistics } from './components/CacheStatistics'
 import './App.css'
 
 function App() {
@@ -11,9 +15,12 @@ function App() {
     rateLimitCooldown, 
     connectionStatus,
     cacheStats,
+    isAdmin,
     clearMessages,
     retryLastMessage
   } = useAppContext();
+  
+  const { settings } = useSettings();
   
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -98,28 +105,43 @@ function App() {
             </button>
           </div>
           
-          {/* Cache Statistics */}
-          {cacheStats && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <h3 className="text-sm font-medium text-blue-800 mb-2">Cache Performance</h3>
-              <div className="text-xs text-blue-700 space-y-1">
-                <div>Hits: {cacheStats.hits}</div>
-                <div>Misses: {cacheStats.misses}</div>
-                <div>Hit Rate: {cacheStats.hitRate.toFixed(1)}%</div>
-              </div>
+          {/* Chat Controls */}
+          <CollapsibleGroup title="Chat Controls" defaultExpanded={true}>
+            <div className="space-y-2">
+              <button
+                onClick={clearMessages}
+                className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+              >
+                Clear Chat
+              </button>
+              <button
+                onClick={retryLastMessage}
+                disabled={!messages.length || isLoading || isRateLimited}
+                className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Retry Last Message
+              </button>
             </div>
-          )}
+          </CollapsibleGroup>
           
-          <div className="text-gray-500 text-sm">
-            <p>LLM Provider settings will appear here.</p>
-          </div>
+          {/* Chat Settings */}
+          <CollapsibleGroup title="Chat Settings" defaultExpanded={true}>
+            <ChatSettings />
+          </CollapsibleGroup>
+          
+          {/* Cache Statistics - Admin Only */}
+          {isAdmin && (
+            <CollapsibleGroup title="Cache Statistics" defaultExpanded={false}>
+              <CacheStatistics cacheStats={cacheStats} />
+            </CollapsibleGroup>
+          )}
         </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0 z-10">
           <div className="flex items-center">
             {/* Desktop Sidebar Toggle */}
             <button
@@ -232,20 +254,28 @@ function App() {
                     <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
                     
                     {/* Message Metadata */}
-                    {msg.metadata && (
+                    {msg.metadata && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens) && (
                       <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
                         <div className="flex items-center justify-between">
-                          <span>{formatTimestamp(msg.metadata.timestamp)}</span>
-                          {msg.metadata.model && (
+                          {settings.displayTimestamp && (
+                            <span>{formatTimestamp(msg.metadata.timestamp)}</span>
+                          )}
+                          {settings.displayMessageModel && msg.metadata.model && (
                             <span className="ml-2 px-1 py-0.5 bg-gray-200 rounded text-gray-600">
                               {msg.metadata.model}
                             </span>
                           )}
                         </div>
-                        {msg.metadata.usage && (
-                          <div className="mt-1 text-xs opacity-75">
-                            Tokens: {msg.metadata.usage.totalTokens}
-                          </div>
+                        {settings.displayMessageTokens && (
+                          msg.metadata.usage ? (
+                            <div className="mt-1 text-xs opacity-75">
+                              Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-xs opacity-75 text-gray-500">
+                              No token data available
+                            </div>
+                          )
                         )}
                       </div>
                     )}
@@ -273,7 +303,7 @@ function App() {
         </div>
 
         {/* Input Area - Fixed at Bottom */}
-        <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+        <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 z-10">
           <div className="flex items-end space-x-3">
             <div className="flex-1 relative">
               {/* Desktop Input */}

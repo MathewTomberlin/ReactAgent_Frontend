@@ -54,6 +54,23 @@
   input, textarea {
     font-size: 16px; /* Prevents zoom on iOS */
   }
+  
+  /* Ensure header and input are always visible */
+  .flex-col {
+    height: 100vh;
+  }
+  
+  /* Messages area should scroll but not overlap header/input */
+  .overflow-y-auto {
+    flex: 1;
+    padding-bottom: 0;
+  }
+  
+  /* Ensure proper viewport height on mobile */
+  .h-screen {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
+  }
 }
 
 /* Rate limit animation */

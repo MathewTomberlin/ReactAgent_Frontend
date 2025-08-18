@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, type ChatResponse, type ApiError } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, type ChatResponse, type ApiError } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -29,6 +29,7 @@ interface AppState {
     misses: number;
     hitRate: number;
   } | null;
+  isAdmin: boolean;
   addUserMessage: (message: string) => void;
   sendToAgent: (text: string) => void;
   clearMessages: () => void;
@@ -42,6 +43,7 @@ const AppContext = createContext<AppState>({
   rateLimitCooldown: 0,
   connectionStatus: 'checking',
   cacheStats: null,
+  isAdmin: false,
   addUserMessage: () => {},
   sendToAgent: () => {},
   clearMessages: () => {},
@@ -53,9 +55,43 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitCooldown, setRateLimitCooldown] = useState(0);
-  const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
-  const [cacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('online');
+  const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
+
+  // Check admin status on mount
+  useEffect(() => {
+    const checkAdmin = async () => {
+      const adminStatus = await checkIsAdmin();
+      setIsAdmin(adminStatus);
+    };
+    checkAdmin();
+  }, []);
+
+  // Fetch cache statistics periodically
+  useEffect(() => {
+    const fetchCacheStats = async () => {
+      try {
+        const stats = await getCacheStats();
+        if (stats) {
+          setCacheStats({
+            hits: stats.cache_hits || 0,
+            misses: stats.cache_misses || 0,
+            hitRate: stats.hit_rate_percent || 0
+          });
+        }
+      } catch (error) {
+        console.log('Cache stats not available (admin only)');
+      }
+    };
+
+    // Fetch immediately and then every 30 seconds
+    fetchCacheStats();
+    const interval = setInterval(fetchCacheStats, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Rate limit countdown timer
   const startRateLimitCooldown = useCallback(() => {
@@ -103,11 +139,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         text: response.message,
         metadata: {
           model: response.model,
-          finishReason: response.finish_reason,
+          finishReason: response.finishReason,
           usage: response.usage ? {
-            promptTokens: response.usage.prompt_tokens,
-            completionTokens: response.usage.completion_tokens,
-            totalTokens: response.usage.total_tokens
+            promptTokens: response.usage.promptTokens,
+            completionTokens: response.usage.completionTokens,
+            totalTokens: response.usage.totalTokens
           } : undefined,
           timestamp: new Date()
         }
@@ -173,6 +209,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       rateLimitCooldown,
       connectionStatus,
       cacheStats,
+      isAdmin,
       addUserMessage,
       sendToAgent,
       clearMessages,

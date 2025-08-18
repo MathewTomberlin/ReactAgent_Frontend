@@ -7,11 +7,11 @@ const BASE_URL = import.meta.env.VITE_API_BASE || "http://localhost:8080";
 export interface ChatResponse {
   message: string;
   model?: string;
-  finish_reason?: string;
+  finishReason?: string;
   usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
   };
 }
 
@@ -99,5 +99,20 @@ export const getCacheStats = async (): Promise<any> => {
   } catch (error) {
     console.error("Failed to get cache stats:", error);
     return null;
+  }
+};
+
+// Check if user is admin (simple implementation)
+export const checkIsAdmin = async (): Promise<boolean> => {
+  try {
+    await axios.get(`${BASE_URL}/admin/cache/stats`, {
+      auth: {
+        username: 'admin',
+        password: 'admin'
+      }
+    });
+    return true;
+  } catch (error) {
+    return false;
   }
 };
