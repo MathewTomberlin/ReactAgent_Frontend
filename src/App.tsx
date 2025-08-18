@@ -3,11 +3,24 @@ import { useAppContext } from './context/AppContext'
 import './App.css'
 
 function App() {
-  const { messages, sendToAgent, isLoading } = useAppContext();
+  const { 
+    messages, 
+    sendToAgent, 
+    isLoading, 
+    isRateLimited, 
+    rateLimitCooldown, 
+    connectionStatus,
+    cacheStats,
+    clearMessages,
+    retryLastMessage
+  } = useAppContext();
+  
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -16,11 +29,15 @@ function App() {
 
   // Focus input when component mounts
   useEffect(() => {
-    inputRef.current?.focus();
+    if (window.innerWidth > 768) {
+      inputRef.current?.focus();
+    } else {
+      textareaRef.current?.focus();
+    }
   }, []);
 
   const handleSubmit = async () => {
-    if (input.trim() !== "") {
+    if (input.trim() !== "" && !isRateLimited && !isLoading) {
       await sendToAgent(input);
       setInput('');
     }
@@ -37,10 +54,36 @@ function App() {
     setSidebarOpen(!sidebarOpen);
   };
 
+  const toggleMobileMenu = () => {
+    setShowMobileMenu(!showMobileMenu);
+  };
+
+  const formatTimestamp = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'online': return 'bg-green-500';
+      case 'offline': return 'bg-red-500';
+      case 'checking': return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'online': return 'Online';
+      case 'offline': return 'Offline';
+      case 'checking': return 'Checking...';
+      default: return 'Unknown';
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
+      {/* Sidebar - Desktop */}
+      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
         <div className="p-4 w-64">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
@@ -54,6 +97,19 @@ function App() {
               </svg>
             </button>
           </div>
+          
+          {/* Cache Statistics */}
+          {cacheStats && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <h3 className="text-sm font-medium text-blue-800 mb-2">Cache Performance</h3>
+              <div className="text-xs text-blue-700 space-y-1">
+                <div>Hits: {cacheStats.hits}</div>
+                <div>Misses: {cacheStats.misses}</div>
+                <div>Hit Rate: {cacheStats.hitRate.toFixed(1)}%</div>
+              </div>
+            </div>
+          )}
+          
           <div className="text-gray-500 text-sm">
             <p>LLM Provider settings will appear here.</p>
           </div>
@@ -65,24 +121,87 @@ function App() {
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center">
-            {!sidebarOpen && (
-              <button
-                onClick={toggleSidebar}
-                className="mr-3 text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
-                title="Open sidebar"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            )}
+            {/* Desktop Sidebar Toggle */}
+            <button
+              onClick={toggleSidebar}
+              className="hidden md:block mr-3 text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
+              title="Open sidebar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            
+            {/* Mobile Menu Toggle */}
+            <button
+              onClick={toggleMobileMenu}
+              className="md:hidden mr-3 text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
+              title="Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            
             <h1 className="text-xl font-semibold text-gray-800">AI Assistant</h1>
           </div>
+          
           <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-            <span className="text-sm text-gray-500">{isLoading ? 'Typing...' : 'Online'}</span>
+            {/* Connection Status */}
+            <div className={`w-2 h-2 rounded-full ${getConnectionStatusColor()}`}></div>
+            <span className="text-sm text-gray-500 hidden sm:inline">{getConnectionStatusText()}</span>
+            
+            {/* Rate Limit Indicator */}
+            {isRateLimited && (
+              <div className="flex items-center space-x-1 bg-red-100 px-2 py-1 rounded text-xs text-red-700">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{rateLimitCooldown}s</span>
+              </div>
+            )}
+            
+            {/* Loading Indicator */}
+            {isLoading && (
+              <div className="flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded text-xs text-blue-700">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span>Typing...</span>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Mobile Menu */}
+        {showMobileMenu && (
+          <div className="md:hidden bg-white border-b border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-700">Quick Actions</h3>
+              <button
+                onClick={toggleMobileMenu}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={clearMessages}
+                className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                Clear Chat
+              </button>
+              <button
+                onClick={retryLastMessage}
+                disabled={!messages.length || isLoading || isRateLimited}
+                className="flex-1 px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -104,16 +223,36 @@ function App() {
                   className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                    className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
                       msg.sender === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
                         : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
                     }`}
                   >
-                    <div className="text-sm">{msg.text}</div>
+                    <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                    
+                    {/* Message Metadata */}
+                    {msg.metadata && (
+                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
+                        <div className="flex items-center justify-between">
+                          <span>{formatTimestamp(msg.metadata.timestamp)}</span>
+                          {msg.metadata.model && (
+                            <span className="ml-2 px-1 py-0.5 bg-gray-200 rounded text-gray-600">
+                              {msg.metadata.model}
+                            </span>
+                          )}
+                        </div>
+                        {msg.metadata.usage && (
+                          <div className="mt-1 text-xs opacity-75">
+                            Tokens: {msg.metadata.usage.totalTokens}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
+              
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-white text-gray-800 border border-gray-200 rounded-lg rounded-bl-none px-4 py-2">
@@ -137,21 +276,36 @@ function App() {
         <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
           <div className="flex items-end space-x-3">
             <div className="flex-1 relative">
+              {/* Desktop Input */}
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={isLoading}
+                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRateLimited}
+              />
+              
+              {/* Mobile Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                rows={1}
+                disabled={isLoading || isRateLimited}
+                style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
+            
             <button
               onClick={handleSubmit}
-              disabled={isLoading || input.trim() === ""}
-              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              disabled={isLoading || isRateLimited || input.trim() === ""}
+              className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
               title="Send message"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,6 +313,13 @@ function App() {
               </svg>
             </button>
           </div>
+          
+          {/* Rate Limit Warning */}
+          {isRateLimited && (
+            <div className="mt-2 text-xs text-red-600 text-center">
+              Rate limit active. You can send 1 message per minute.
+            </div>
+          )}
         </div>
       </div>
     </div>
