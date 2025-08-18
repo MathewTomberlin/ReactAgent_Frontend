@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, sendMessage, type ChatResponse, type ApiError } from '../api/FastAPIClient';
+import { sendChatMessage, type ChatResponse, type ApiError } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -54,7 +54,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitCooldown, setRateLimitCooldown] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
-  const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
+  const [cacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
 
   // Rate limit countdown timer
