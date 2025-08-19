@@ -4,6 +4,7 @@ import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
 import { ChatSettings } from './components/ChatSettings'
 import { CacheStatistics } from './components/CacheStatistics'
+import { initializeMobileViewport } from './utils/mobileViewport'
 import './App.css'
 
 function App() {
@@ -20,11 +21,12 @@ function App() {
     retryLastMessage
   } = useAppContext();
   
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -42,6 +44,24 @@ function App() {
       textareaRef.current?.focus();
     }
   }, []);
+
+  // Initialize mobile viewport handling
+  useEffect(() => {
+    const cleanup = initializeMobileViewport();
+    return cleanup;
+  }, []);
+
+  useEffect(()=>{
+    const checkKeyboardState = () => {
+      const isVisible = document.body.classList.contains('keyboard-visible');
+      if(isVisible !== keyboardVisible){
+        setKeyboardVisible(isVisible);
+      }
+    };
+
+    const interval = setInterval(checkKeyboardState, 100);
+    return () => clearInterval(interval);
+  }, [keyboardVisible]);
 
   const handleSubmit = async () => {
     if (input.trim() !== "" && !isRateLimited && !isLoading) {
@@ -88,7 +108,8 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden md:relative">
+
       {/* Sidebar - Desktop */}
       <div className={`${sidebarOpen ? 'w-64' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
         <div className="p-4 w-64">
@@ -139,9 +160,9 @@ function App() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 mobile-layout">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0 z-10">
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0 sticky z-20 top-0 mobile-header">
           <div className="flex items-center">
             {/* Desktop Sidebar Toggle */}
             <button
@@ -195,9 +216,9 @@ function App() {
 
         {/* Mobile Menu */}
         {showMobileMenu && (
-          <div className="md:hidden bg-white border-b border-gray-200 p-4">
+          <div className="md:hidden bg-white border-b border-gray-200 p-4 mobile-menu">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-gray-700">Quick Actions</h3>
+              <h3 className="text-sm font-medium text-gray-700">Menu</h3>
               <button
                 onClick={toggleMobileMenu}
                 className="text-gray-500 hover:text-gray-700"
@@ -207,26 +228,65 @@ function App() {
                 </svg>
               </button>
             </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={clearMessages}
-                className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-              >
-                Clear Chat
-              </button>
-              <button
-                onClick={retryLastMessage}
-                disabled={!messages.length || isLoading || isRateLimited}
-                className="flex-1 px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
-              >
-                Retry
-              </button>
+            
+            {/* Chat Controls */}
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Controls</h4>
+              <div className="flex">
+                <button
+                  onClick={clearMessages}
+                  className="flex-1 px-3 py-2 text-sm bg-red-200 text-gray-700 rounded active:bg-red-100 "
+                >
+                  Clear Chat
+                </button>
+                <button
+                  onClick={retryLastMessage}
+                  disabled={!messages.length || isLoading || isRateLimited}
+                  className="flex-1 px-3 py-2 text-sm bg-blue-200 text-gray-700 rounded active:bg-blue-100"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+            
+            {/* Chat Settings */}
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Display Message Model</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.displayMessageModel}
+                    onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Display Message Tokens</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.displayMessageTokens}
+                    onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Display Timestamp</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.displayTimestamp}
+                    onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 mobile-messages">
           {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-gray-500">
@@ -266,7 +326,7 @@ function App() {
                             </span>
                           )}
                         </div>
-                        {settings.displayMessageTokens && (
+                        {settings.displayMessageTokens && msg.sender === 'agent' && (
                           msg.metadata.usage ? (
                             <div className="mt-1 text-xs opacity-75">
                               Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
@@ -303,7 +363,7 @@ function App() {
         </div>
 
         {/* Input Area - Fixed at Bottom */}
-        <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 z-10">
+        <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 bottom-0 z-20 mobile-input">
           <div className="flex items-end space-x-3">
             <div className="flex-1 relative">
               {/* Desktop Input */}

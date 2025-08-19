@@ -1,7 +1,28 @@
 import axios, { AxiosError } from "axios";
 
-// Use environment variable or fallback to localhost for development
-const BASE_URL = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+// Function to get the correct API base URL
+const getApiBaseUrl = (): string => {
+  // If environment variable is set, use it
+  if (import.meta.env.VITE_API_BASE) {
+    return import.meta.env.VITE_API_BASE;
+  }
+  
+  // If running on localhost (development), use localhost
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return "http://localhost:8080";
+  }
+  
+  // If accessed from mobile/other device, use the same hostname as the frontend
+  // but with port 8080 for the backend
+  return `http://${window.location.hostname}:8080`;
+};
+
+const BASE_URL = getApiBaseUrl();
+
+// Debug logging for API URL detection
+console.log('Frontend URL:', window.location.href);
+console.log('Frontend hostname:', window.location.hostname);
+console.log('API Base URL:', BASE_URL);
 
 // TypeScript interfaces for the new API response format
 export interface ChatResponse {
@@ -32,6 +53,7 @@ export interface ApiError {
 // Enhanced API client with better error handling
 export const sendChatMessage = async (request: MessageRequest): Promise<ChatResponse> => {
   try {
+    console.log('Sending chat message to:', `${BASE_URL}/chat`);
     const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request);
     return data;
   } catch (error) {
@@ -78,10 +100,13 @@ export const sendMessage = async (message: string) => {
 // Health check endpoint
 export const checkHealth = async (): Promise<boolean> => {
   try {
+    console.log('Checking health at:', `${BASE_URL}/health`);
     const { data } = await axios.get(`${BASE_URL}/health`);
+    console.log('Health check response:', data);
     return data.status === "UP";
   } catch (error) {
     console.error("Health check failed:", error);
+    console.error("Failed URL:", `${BASE_URL}/health`);
     return false;
   }
 };
