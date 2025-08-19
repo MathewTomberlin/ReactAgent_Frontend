@@ -28,6 +28,8 @@ console.log('API Base URL:', BASE_URL);
 export interface ChatResponse {
   message: string;
   model?: string;
+  category?: 'Knowledge' | 'Request' | 'Chat';
+  cached?: boolean;
   finishReason?: string;
   usage?: {
     promptTokens: number;
@@ -84,6 +86,32 @@ export const sendChatMessage = async (request: MessageRequest): Promise<ChatResp
       status: axiosError.response.status
     } as ApiError;
   }
+};
+
+// SSE stream helper for realtime agent stages
+export const streamChat = (
+  params: { message: string; model?: string; temperature?: number },
+  onEvent: (evt: { type: 'agent' | 'answer' | 'error'; data: any }) => void
+) => {
+  const url = new URL(`${BASE_URL}/chat/stream`);
+  url.searchParams.set('message', params.message);
+  if (params.model) url.searchParams.set('model', params.model);
+  if (typeof params.temperature === 'number') url.searchParams.set('temperature', String(params.temperature));
+
+  const es = new EventSource(url.toString());
+  es.addEventListener('agent', (e) => {
+    try { onEvent({ type: 'agent', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+  });
+  es.addEventListener('answer', (e) => {
+    try { onEvent({ type: 'answer', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+    es.close();
+  });
+  es.addEventListener('error', (e) => {
+    try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+    es.close();
+  });
+  es.onerror = () => { es.close(); };
+  return () => es.close();
 };
 
 // Legacy method for backward compatibility (deprecated)

@@ -1,12 +1,15 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, type ChatResponse, type ApiError } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
   text: string;
+  category?: 'Knowledge' | 'Request' | 'Chat';
   metadata?: {
     isCached?: boolean;
+    isError?: boolean;
+    isIndicator?: boolean;
     model?: string;
     finishReason?: string;
     usage?: {
@@ -131,27 +134,143 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     
     try {
-      // Use the new chat endpoint
-      const response: ChatResponse = await sendChatMessage({ message: text });
-      
-      const agentMessage: Message = {
-        sender: "agent",
-        text: response.message,
-        metadata: {
-          model: response.model,
-          finishReason: response.finishReason,
-          usage: response.usage ? {
-            promptTokens: response.usage.promptTokens,
-            completionTokens: response.usage.completionTokens,
-            totalTokens: response.usage.totalTokens
-          } : undefined,
-          timestamp: new Date()
+      // Prefer SSE for realtime agent status; fallback to REST on error
+      let done = false;
+      let indicatorTimer: number | undefined;
+      let indicatorShown = false;
+      let indicatorShownAt = 0;
+
+      const close = streamChat({ message: text }, (evt) => {
+        if (evt.type === 'agent') {
+          const statusText = evt.data?.message || 'Processing...';
+          if (!indicatorShown && indicatorTimer === undefined) {
+            indicatorTimer = window.setTimeout(() => {
+              setMessages(prev => {
+                const withoutTrailingStatus = prev.filter(m => !(m.sender === 'agent' && m.text.startsWith('Agent ')));
+                return [...withoutTrailingStatus, { sender: 'agent', text: `Agent ${statusText.toLowerCase()}`, metadata: { timestamp: new Date(), isIndicator: true } }];
+              });
+              indicatorShown = true;
+              indicatorShownAt = Date.now();
+              indicatorTimer = undefined;
+            }, 300);
+          } else if (indicatorShown) {
+            // Update existing indicator text
+            setMessages(prev => {
+              if (!prev.length) return prev;
+              const last = prev[prev.length - 1];
+              if (last.sender === 'agent' && last.text.startsWith('Agent ') && last.metadata?.isIndicator) {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...last, text: `Agent ${statusText.toLowerCase()}` } as any;
+                return updated;
+              }
+              return prev;
+            });
+          }
+        } else if (evt.type === 'answer') {
+          done = true;
+          const resp = evt.data as ChatResponse;
+          const agentMessage: Message = {
+            sender: 'agent',
+            text: resp.message,
+            category: resp.category,
+            metadata: {
+              isCached: resp.cached === true,
+              model: resp.model,
+              finishReason: resp.finishReason,
+              usage: resp.usage ? {
+                promptTokens: resp.usage.promptTokens,
+                completionTokens: resp.usage.completionTokens,
+                totalTokens: resp.usage.totalTokens
+              } : undefined,
+              timestamp: new Date()
+            }
+          };
+          if (indicatorTimer !== undefined) {
+            clearTimeout(indicatorTimer);
+            indicatorTimer = undefined;
+          }
+          const replaceFinal = () => setMessages(prev => {
+            if (prev.length && prev[prev.length - 1].sender === 'agent' && prev[prev.length - 1].text.startsWith('Agent ') && prev[prev.length - 1].metadata?.isIndicator) {
+              return [...prev.slice(0, -1), agentMessage];
+            }
+            return [...prev, agentMessage];
+          });
+          const elapsed = indicatorShown ? (Date.now() - indicatorShownAt) : 0;
+          const minVisible = 450;
+          if (indicatorShown && elapsed < minVisible) {
+            setTimeout(replaceFinal, minVisible - elapsed);
+          } else {
+            replaceFinal();
+          }
+          setConnectionStatus('online');
+          setIsLoading(false);
+          if (!resp.cached) {
+            startRateLimitCooldown();
+          }
+        } else if (evt.type === 'error') {
+          // Mark done; handle rate limit or generic error; do not fallback
+          done = true;
+          const msg: string = (evt.data && evt.data.message) ? String(evt.data.message) : 'Error occurred';
+          if (indicatorTimer !== undefined) {
+            clearTimeout(indicatorTimer);
+            indicatorTimer = undefined;
+          }
+          if (msg.toLowerCase().includes('rate limit')) {
+            startRateLimitCooldown();
+            const rateMsg: Message = {
+              sender: 'agent',
+              text: 'Rate limit exceeded. Please wait before sending another message.',
+              metadata: { timestamp: new Date(), isError: true }
+            };
+            setMessages(prev => prev.length ? [...prev.slice(0, -1), rateMsg] : [rateMsg]);
+            setConnectionStatus('online');
+          } else {
+            const errorMsg: Message = {
+              sender: 'agent',
+              text: msg,
+              metadata: { timestamp: new Date(), isError: true }
+            };
+            setMessages(prev => prev.length ? [...prev.slice(0, -1), errorMsg] : [errorMsg]);
+          }
+          setIsLoading(false);
         }
-      };
-      
-      setMessages(prev => [...prev, agentMessage]);
-      setConnectionStatus('online');
-      
+      });
+
+      // Safety timeout in case stream stalls
+      setTimeout(async () => {
+        if (!done) {
+          try {
+            const response: ChatResponse = await sendChatMessage({ message: text });
+            const agentMessage: Message = {
+              sender: 'agent',
+              text: response.message,
+              category: response.category,
+              metadata: {
+                isCached: response.cached === true,
+                model: response.model,
+                finishReason: response.finishReason,
+                usage: response.usage ? {
+                  promptTokens: response.usage.promptTokens,
+                  completionTokens: response.usage.completionTokens,
+                  totalTokens: response.usage.totalTokens
+                } : undefined,
+                timestamp: new Date()
+              }
+            };
+            setMessages(prev => prev.length && prev[prev.length - 1].text.startsWith('Agent ') ? [...prev.slice(0, -1), agentMessage] : [...prev, agentMessage]);
+            setConnectionStatus('online');
+            setIsLoading(false);
+            if (!response.cached) {
+              startRateLimitCooldown();
+            }
+          } catch (e) {
+            // handled by outer catch
+          } finally {
+            close();
+          }
+        }
+      }, 8000);
+
     } catch (error: any) {
       const apiError = error as ApiError;
       
@@ -182,8 +301,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }]);
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 

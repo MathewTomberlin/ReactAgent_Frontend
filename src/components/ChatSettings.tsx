@@ -44,6 +44,18 @@ export const ChatSettings = () => {
           className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
         />
       </div>
+
+      <div className="flex items-center justify-between">
+        <label className="text-sm text-gray-700 cursor-pointer">
+          Display Cached Indicator
+        </label>
+        <input
+          type="checkbox"
+          checked={settings.displayCachedIndicator}
+          onChange={() => handleSettingChange('displayCachedIndicator')}
+          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+        />
+      </div>
     </div>
   );
 };

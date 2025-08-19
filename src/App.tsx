@@ -308,14 +308,25 @@ function App() {
                     className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
                       msg.sender === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
-                        : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                        : (msg.metadata?.isIndicator
+                            ? 'bg-gray-50 text-gray-600 border border-dashed border-gray-300 italic rounded-bl-none'
+                            : (msg.metadata?.isError ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'))
                     }`}
                   >
-                    <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                    <div className="flex items-center space-x-2">
+                      {msg.sender === 'agent' && (msg as any).category && (
+                        <span className={`${
+                          (msg as any).category === 'Knowledge' ? 'bg-purple-100 text-purple-700' :
+                          (msg as any).category === 'Request' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-700'
+                        } text-xs px-2 py-0.5 rounded-full`}>{(msg as any).category}</span>
+                      )}
+                      <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                    </div>
                     
                     {/* Message Metadata */}
-                    {msg.metadata && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens) && (
-                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
+                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.isCached)) && (
+                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
                         <div className="flex items-center justify-between">
                           {settings.displayTimestamp && (
                             <span>{formatTimestamp(msg.metadata.timestamp)}</span>
@@ -325,8 +336,11 @@ function App() {
                               {msg.metadata.model}
                             </span>
                           )}
+                          {settings.displayCachedIndicator && msg.metadata.isCached && msg.sender === 'agent' && (
+                            <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
+                          )}
                         </div>
-                        {settings.displayMessageTokens && msg.sender === 'agent' && (
+                        {settings.displayMessageTokens && msg.sender === 'agent' && !(settings.displayCachedIndicator && msg.metadata.isCached) && (
                           msg.metadata.usage ? (
                             <div className="mt-1 text-xs opacity-75">
                               Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
@@ -375,7 +389,7 @@ function App() {
                 onKeyPress={handleKeyPress}
                 placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
                 className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRateLimited}
+                disabled={isLoading /* allow typing while rate limited */}
               />
               
               {/* Mobile Textarea */}
@@ -387,7 +401,7 @@ function App() {
                 placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
                 className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
-                disabled={isLoading || isRateLimited}
+                disabled={isLoading /* allow typing while rate limited */}
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>

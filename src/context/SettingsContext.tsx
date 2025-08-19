@@ -5,6 +5,7 @@ interface ChatSettings {
   displayMessageModel: boolean;
   displayMessageTokens: boolean;
   displayTimestamp: boolean;
+  displayCachedIndicator: boolean;
 }
 
 interface SettingsContextType {
@@ -18,6 +19,7 @@ const defaultSettings: ChatSettings = {
   displayMessageModel: true,
   displayMessageTokens: true,
   displayTimestamp: true,
+  displayCachedIndicator: true,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
