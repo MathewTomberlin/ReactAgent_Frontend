@@ -11,6 +11,15 @@ const getApiBaseUrl = (): string => {
 };
 
 const BASE_URL = getApiBaseUrl();
+const getClientId = (): string => {
+  const key = 'reactagent_client_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(key, id);
+  }
+  return id;
+};
 
 export interface UploadResult {
   sessionId: string;
@@ -28,7 +37,7 @@ export const uploadPdf = async (
   const url = new URL(`${BASE_URL}/rag/upload`);
   if (sessionId) url.searchParams.set('sessionId', sessionId);
   const { data } = await axios.post(url.toString(), form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': 'multipart/form-data', 'X-Client-Id': getClientId() },
     onUploadProgress: (evt) => {
       if (evt.total && onProgress) {
         const percent = Math.round((evt.loaded * 100) / evt.total);
@@ -42,7 +51,7 @@ export const uploadPdf = async (
 export const clearRag = async (sessionId?: string): Promise<void> => {
   const url = new URL(`${BASE_URL}/rag/clear`);
   if (sessionId) url.searchParams.set('sessionId', sessionId);
-  await axios.delete(url.toString());
+  await axios.delete(url.toString(), { headers: { 'X-Client-Id': getClientId() } });
 };
 
 

@@ -18,6 +18,15 @@ const getApiBaseUrl = (): string => {
 };
 
 const BASE_URL = getApiBaseUrl();
+const getClientId = (): string => {
+  const key = 'reactagent_client_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(key, id);
+  }
+  return id;
+};
 
 // Debug logging for API URL detection
 console.log('Frontend URL:', window.location.href);
@@ -57,7 +66,7 @@ export interface ApiError {
 export const sendChatMessage = async (request: MessageRequest): Promise<ChatResponse> => {
   try {
     console.log('Sending chat message to:', `${BASE_URL}/chat`);
-    const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request);
+    const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request, { headers: { 'X-Client-Id': getClientId() } });
     return data;
   } catch (error) {
     const axiosError = error as AxiosError;
@@ -95,7 +104,7 @@ export interface SessionResponse {
 }
 
 export const getOrCreateSession = async (): Promise<SessionResponse> => {
-  const { data } = await axios.get(`${BASE_URL}/session`);
+  const { data } = await axios.get(`${BASE_URL}/session`, { headers: { 'X-Client-Id': getClientId() } });
   // data contains fields including sessionId
   return { sessionId: (data as any).sessionId } as SessionResponse;
 };
@@ -110,6 +119,7 @@ export const streamChat = (
   if (params.model) url.searchParams.set('model', params.model);
   if (typeof params.temperature === 'number') url.searchParams.set('temperature', String(params.temperature));
 
+  url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());
   es.addEventListener('agent', (e) => {
     try { onEvent({ type: 'agent', data: JSON.parse((e as MessageEvent).data) }); } catch {}
