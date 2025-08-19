@@ -43,6 +43,7 @@ export interface MessageRequest {
   model?: string;
   temperature?: number;
   session_id?: string;
+  sessionId?: string;
 }
 
 export interface ApiError {
@@ -86,6 +87,17 @@ export const sendChatMessage = async (request: MessageRequest): Promise<ChatResp
       status: axiosError.response.status
     } as ApiError;
   }
+};
+
+// Session API
+export interface SessionResponse {
+  sessionId: string;
+}
+
+export const getOrCreateSession = async (): Promise<SessionResponse> => {
+  const { data } = await axios.get(`${BASE_URL}/session`);
+  // data contains fields including sessionId
+  return { sessionId: (data as any).sessionId } as SessionResponse;
 };
 
 // SSE stream helper for realtime agent stages

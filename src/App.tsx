@@ -3,6 +3,7 @@ import { useAppContext } from './context/AppContext'
 import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
 import { ChatSettings } from './components/ChatSettings'
+import { RagUploader } from './components/RagUploader'
 import { CacheStatistics } from './components/CacheStatistics'
 import { initializeMobileViewport } from './utils/mobileViewport'
 import './App.css'
@@ -149,6 +150,11 @@ function App() {
           <CollapsibleGroup title="Chat Settings" defaultExpanded={true}>
             <ChatSettings />
           </CollapsibleGroup>
+
+          {/* Knowledge - PDF Upload */}
+          <CollapsibleGroup title="Knowledge (RAG)" defaultExpanded={false}>
+            <RagUploader />
+          </CollapsibleGroup>
           
           {/* Cache Statistics - Admin Only */}
           {isAdmin && (
@@ -252,6 +258,11 @@ function App() {
             {/* Chat Settings */}
             <div className="mb-4">
               <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
+            {/* Knowledge - PDF Upload (mobile) */}
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-gray-600 mb-2">Knowledge (RAG)</h4>
+              <RagUploader />
+            </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm text-gray-700">Display Message Model</label>
