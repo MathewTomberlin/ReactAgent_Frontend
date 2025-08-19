@@ -30,3 +30,143 @@
 .animate-bounce {
   animation: bounce 1.4s infinite ease-in-out both;
 }
+
+/* Mobile optimizations */
+@media (max-width: 768px) and (orientation: portrait) {
+  /* Ensure proper touch targets */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .mobile-layout {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    background: #f9fafb !important;
+    height: 100dvh !important;
+    min-height: 10dvh !important;
+  }
+  
+  /* Fixed header - always stays at top */
+  .mobile-header {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 100 !important;
+    height: 60px !important;
+    background: white !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+  
+  /* Fixed input area - moves up when keyboard appears */
+  .mobile-input {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 100 !important;
+    background: white !important;
+    border-top: 1px solid #e5e7eb !important;
+  }
+  
+  /* Messages area - scrollable between header and input */
+  .mobile-messages {
+    flex: 1 !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+    padding-top: 75px;
+    padding-bottom: 85px;
+  }
+  
+  /* Mobile menu - positioned below header */
+  .mobile-menu {
+    position: fixed !important;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: #DDDDDD;
+    border-bottom: 1px solid #e5e7eb;
+  }
+}
+
+/* Rate limit animation */
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.rate-limit-pulse {
+  animation: pulse-red 2s infinite;
+}
+
+/* Connection status animations */
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.connection-online {
+  animation: pulse-green 2s infinite;
+}
+
+/* Smooth transitions for mobile menu */
+.mobile-menu-enter {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.mobile-menu-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms, transform 200ms;
+}
+
+.mobile-menu-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mobile-menu-exit-active {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 200ms, transform 200ms;
+}
+
+/* Enhanced focus states for accessibility */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Dark mode support (if needed in future) */
+@media (prefers-color-scheme: dark) {
+  /* Dark mode styles can be added here */
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .bg-gray-200 {
+    background-color: #000000;
+    color: #ffffff;
+  }
+  
+  .text-gray-500 {
+    color: #ffffff;
+  }
+}
