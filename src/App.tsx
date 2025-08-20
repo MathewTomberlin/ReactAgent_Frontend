@@ -4,20 +4,22 @@ import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
 import { ChatSettings } from './components/ChatSettings'
 import { RagUploader } from './components/RagUploader'
-import { CacheStatistics } from './components/CacheStatistics'
+
+import { MemoryManagement } from './components/MemoryManagement'
+import { Tooltip } from './components/Tooltip'
 import { initializeMobileViewport } from './utils/mobileViewport'
 import './App.css'
 
 function App() {
-  const { 
-    messages, 
-    sendToAgent, 
-    isLoading, 
-    isRateLimited, 
-    rateLimitCooldown, 
+  const {
+    messages,
+    sendToAgent,
+    isLoading,
+    isRateLimited,
+    rateLimitCooldown,
     connectionStatus,
-    cacheStats,
-    isAdmin,
+    sessionId,
+    importMemory,
     clearMessages,
     retryLastMessage
   } = useAppContext();
@@ -66,7 +68,7 @@ function App() {
 
   const handleSubmit = async () => {
     if (input.trim() !== "" && !isRateLimited && !isLoading) {
-      await sendToAgent(input);
+      await sendToAgent(input, settings);
       setInput('');
     }
   };
@@ -130,19 +132,23 @@ function App() {
           {/* Chat Controls */}
           <CollapsibleGroup title="Chat Controls" defaultExpanded={true}>
             <div className="space-y-2">
-              <button
-                onClick={clearMessages}
-                className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-              >
-                Clear Chat
-              </button>
-              <button
-                onClick={retryLastMessage}
-                disabled={!messages.length || isLoading || isRateLimited}
-                className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Retry Last Message
-              </button>
+              <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
+                <button
+                  onClick={clearMessages}
+                  className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                >
+                  Clear Chat
+                </button>
+              </Tooltip>
+              <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
+                <button
+                  onClick={() => retryLastMessage(settings)}
+                  disabled={!messages.length || isLoading || isRateLimited}
+                  className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Retry Last Message
+                </button>
+              </Tooltip>
             </div>
           </CollapsibleGroup>
           
@@ -152,16 +158,19 @@ function App() {
           </CollapsibleGroup>
 
           {/* Knowledge - PDF Upload */}
-          <CollapsibleGroup title="Knowledge (RAG)" defaultExpanded={false}>
+          <CollapsibleGroup title="Knowledge" defaultExpanded={false}>
             <RagUploader />
           </CollapsibleGroup>
-          
-          {/* Cache Statistics - Admin Only */}
-          {isAdmin && (
-            <CollapsibleGroup title="Cache Statistics" defaultExpanded={false}>
-              <CacheStatistics cacheStats={cacheStats} />
-            </CollapsibleGroup>
-          )}
+
+          {/* Memory Management */}
+          <CollapsibleGroup title="Memory Management" defaultExpanded={false}>
+            <MemoryManagement
+              sessionId={sessionId}
+              onMemoryImport={importMemory}
+            />
+          </CollapsibleGroup>
+
+
         </div>
       </div>
 
@@ -242,29 +251,65 @@ function App() {
             <div className="mb-4">
               <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Controls</h4>
               <div className="flex">
-                <button
-                  onClick={clearMessages}
-                  className="flex-1 px-3 py-2 text-sm bg-red-200 text-gray-700 rounded active:bg-red-100 "
-                >
-                  Clear Chat
-                </button>
-                <button
-                  onClick={retryLastMessage}
-                  disabled={!messages.length || isLoading || isRateLimited}
-                  className="flex-1 px-3 py-2 text-sm bg-blue-200 text-gray-700 rounded active:bg-blue-100"
-                >
-                  Retry
-                </button>
+                <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
+                  <button
+                    onClick={clearMessages}
+                    className="flex-1 px-3 py-2 text-sm bg-red-200 text-gray-700 rounded active:bg-red-100 "
+                  >
+                    Clear Chat
+                  </button>
+                </Tooltip>
+                <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
+                  <button
+                    onClick={() => retryLastMessage(settings)}
+                    disabled={!messages.length || isLoading || isRateLimited}
+                    className="flex-1 px-3 py-2 text-sm bg-blue-200 text-gray-700 rounded active:bg-blue-100"
+                  >
+                    Retry
+                  </button>
+                </Tooltip>
               </div>
             </div>
             
             {/* Chat Settings */}
             <div className="mb-4">
               <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Display Message Model</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.displayMessageModel}
+                    onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Display Message Tokens</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.displayMessageTokens}
+                    onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+
+              </div>
+            </div>
+
             {/* Knowledge - PDF Upload (mobile) */}
             <div className="mb-4">
               <h4 className="text-xs font-medium text-gray-600 mb-2">Knowledge (RAG)</h4>
               <RagUploader />
+            </div>
+
+            {/* Memory Management - Mobile */}
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-gray-600 mb-2">Memory Management</h4>
+              <MemoryManagement
+                sessionId={sessionId}
+                onMemoryImport={importMemory}
+              />
             </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -296,7 +341,6 @@ function App() {
                 </div>
               </div>
             </div>
-          </div>
         )}
 
         {/* Messages Area */}

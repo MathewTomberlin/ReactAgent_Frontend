@@ -6,6 +6,8 @@ interface ChatSettings {
   displayMessageTokens: boolean;
   displayTimestamp: boolean;
   displayCachedIndicator: boolean;
+  disableLongMemoryRecall: boolean;
+  disableAllMemoryRecall: boolean;
 }
 
 interface SettingsContextType {
@@ -20,6 +22,8 @@ const defaultSettings: ChatSettings = {
   displayMessageTokens: true,
   displayTimestamp: true,
   displayCachedIndicator: true,
+  disableLongMemoryRecall: false,
+  disableAllMemoryRecall: false,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -43,7 +47,6 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
       try {
         const parsed = JSON.parse(savedSettings);
         setSettings({ ...defaultSettings, ...parsed });
-        console.log('Loaded settings from localStorage:', parsed);
       } catch (error) {
         console.error('Failed to parse saved settings:', error);
         setSettings(defaultSettings);
@@ -58,7 +61,6 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isInitialized) {
       localStorage.setItem('chatSettings', JSON.stringify(settings));
-      console.log('Saved settings to localStorage:', settings);
     }
   }, [settings, isInitialized]);
 

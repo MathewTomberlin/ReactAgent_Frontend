@@ -33,10 +33,12 @@ interface AppState {
     hitRate: number;
   } | null;
   isAdmin: boolean;
+  sessionId: string;
+  importMemory: (memoryToken?: string, memoryChunks?: string[]) => void;
   addUserMessage: (message: string) => void;
-  sendToAgent: (text: string) => void;
+  sendToAgent: (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
   clearMessages: () => void;
-  retryLastMessage: () => void;
+  retryLastMessage: (settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
 }
 
 const AppContext = createContext<AppState>({
@@ -47,6 +49,8 @@ const AppContext = createContext<AppState>({
   connectionStatus: 'checking',
   cacheStats: null,
   isAdmin: false,
+  sessionId: '',
+  importMemory: () => {},
   addUserMessage: () => {},
   sendToAgent: () => {},
   clearMessages: () => {},
@@ -130,14 +134,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setLastUserMessage(text);
   };
 
-  const sendToAgent = async (text: string) => {
+  const sendToAgent = async (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
     if (isRateLimited) {
       return; // Don't send if rate limited
     }
 
     addUserMessage(text);
     setIsLoading(true);
-    
+
     try {
       // Prefer SSE for realtime agent status; fallback to REST on error
       let done = false;
@@ -145,13 +149,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       let indicatorShown = false;
       let indicatorShownAt = 0;
 
-      // load memory for this session
+      // load memory for this session (unless all memory is disabled)
       const memKey = `mem:${sessionId}`;
       const raw = localStorage.getItem(memKey);
       let memory: { token?: string; chunks?: string[] } | undefined;
-      if (raw) { try { memory = JSON.parse(raw); } catch {} }
+      if (raw && !(settings?.disableAllMemoryRecall)) {
+        try {
+          memory = JSON.parse(raw);
+        } catch {}
+      }
 
-      const close = streamChat({ message: text, memoryToken: memory?.token }, (evt) => {
+      const close = streamChat({
+        message: text,
+        memoryToken: memory?.token,
+        disableLongMemoryRecall: settings?.disableLongMemoryRecall,
+        disableAllMemoryRecall: settings?.disableAllMemoryRecall
+      }, (evt) => {
         if (evt.type === 'agent') {
           const statusText = evt.data?.message || 'Processing...';
           if (!indicatorShown && indicatorTimer === undefined) {
@@ -257,7 +270,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setTimeout(async () => {
         if (!done) {
           try {
-            const response: ChatResponse = await sendChatMessage({ message: text, sessionId, memoryToken: memory?.token, memoryChunks: memory?.chunks });
+            const response: ChatResponse = await sendChatMessage({
+              message: text,
+              sessionId,
+              memoryToken: memory?.token,
+              memoryChunks: memory?.chunks,
+              disableLongMemoryRecall: settings?.disableLongMemoryRecall,
+              disableAllMemoryRecall: settings?.disableAllMemoryRecall
+            });
             const agentMessage: Message = {
               sender: 'agent',
               text: response.message,
@@ -331,12 +351,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setLastUserMessage('');
   };
 
-  const retryLastMessage = () => {
+  const retryLastMessage = (settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
     if (lastUserMessage && !isLoading && !isRateLimited) {
       // Remove the last user and agent messages
       setMessages(prev => prev.slice(0, -2));
       // Retry the last message
-      sendToAgent(lastUserMessage);
+      sendToAgent(lastUserMessage, settings);
+    }
+  };
+
+  const importMemory = (memoryToken?: string, memoryChunks?: string[]) => {
+    const memKey = `mem:${sessionId}`;
+    if (memoryToken || memoryChunks) {
+      const memoryData = { token: memoryToken, chunks: memoryChunks };
+      localStorage.setItem(memKey, JSON.stringify(memoryData));
+    } else {
+      localStorage.removeItem(memKey);
     }
   };
 
@@ -349,6 +379,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       connectionStatus,
       cacheStats,
       isAdmin,
+      sessionId,
+      importMemory,
       addUserMessage,
       sendToAgent,
       clearMessages,

@@ -55,6 +55,8 @@ export interface MessageRequest {
   sessionId?: string;
   memoryToken?: string;
   memoryChunks?: string[];
+  disableLongMemoryRecall?: boolean;
+  disableAllMemoryRecall?: boolean;
 }
 
 export interface ApiError {
@@ -126,7 +128,14 @@ export const importSession = async (memJson: any) => {
 
 // SSE stream helper for realtime agent stages
 export const streamChat = (
-  params: { message: string; model?: string; temperature?: number; memoryToken?: string },
+  params: {
+    message: string;
+    model?: string;
+    temperature?: number;
+    memoryToken?: string;
+    disableLongMemoryRecall?: boolean;
+    disableAllMemoryRecall?: boolean;
+  },
   onEvent: (evt: { type: 'agent' | 'answer' | 'error'; data: any }) => void
 ) => {
   const url = new URL(`${BASE_URL}/chat/stream`);
@@ -134,6 +143,8 @@ export const streamChat = (
   if (params.model) url.searchParams.set('model', params.model);
   if (typeof params.temperature === 'number') url.searchParams.set('temperature', String(params.temperature));
   if (params.memoryToken) url.searchParams.set('memoryToken', params.memoryToken);
+  if (params.disableLongMemoryRecall) url.searchParams.set('disableLongMemoryRecall', 'true');
+  if (params.disableAllMemoryRecall) url.searchParams.set('disableAllMemoryRecall', 'true');
 
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());
@@ -205,5 +216,236 @@ export const checkIsAdmin = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     return false;
+  }
+};
+
+// Session Memory interface
+export interface SessionMemory {
+  sessionId?: string;
+  turns?: Array<{
+    ts: string;
+    role: string;
+    content: string;
+  }>;
+  items?: Array<{
+    id: string;
+    kind: string;
+    text: string;
+    importance: number;
+    createdAt: string;
+    lastAccessedAt: string;
+  }>;
+  summary?: string;
+  meta?: {
+    version: string;
+    turnCount: number;
+    tokenBytes: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+}
+
+// Export session memory as JSON
+export const exportSessionMemory = async (
+  sessionId: string,
+  memoryToken?: string,
+  memoryChunks?: string[]
+): Promise<SessionMemory> => {
+  try {
+    const params: any = { sessionId };
+    if (memoryToken) {
+      params.memoryToken = memoryToken;
+    } else if (memoryChunks && memoryChunks.length > 0) {
+      params.memoryChunks = JSON.stringify(memoryChunks);
+    }
+
+    const response = await axios.get<SessionMemory>(`${BASE_URL}/sessions/export`, {
+      params,
+      headers: {
+        'X-Client-Id': getClientId(),
+      },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to export memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Import session memory from JSON
+export const importSessionMemory = async (memoryData: SessionMemory): Promise<{
+  sessionId: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
+  memoryMeta: {
+    sizeBytes: number;
+    chunkCount: number;
+    version: string;
+  };
+}> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/sessions/import`, memoryData, {
+      headers: {
+        'X-Client-Id': getClientId(),
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to import memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Clear long-term memory (keeps conversation turns and summary)
+export const clearLongTermMemory = async (sessionId: string): Promise<{
+  sessionId: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
+  memoryMeta: {
+    sizeBytes: number;
+    chunkCount: number;
+    version: string;
+  };
+}> => {
+  try {
+    // Get current memory to preserve turns and summary
+    const memKey = `mem:${sessionId}`;
+    const raw = localStorage.getItem(memKey);
+    let memory: { token?: string; chunks?: string[] } | undefined;
+    if (raw) {
+      try {
+        memory = JSON.parse(raw);
+      } catch (e) {
+        // Continue without memory
+      }
+    }
+
+    let currentMemory: SessionMemory = {};
+    if (memory?.token || memory?.chunks) {
+      const exported = await exportSessionMemory(sessionId, memory.token, memory.chunks);
+      currentMemory = exported;
+    }
+
+    // Clear items (long-term memory) but keep turns and summary
+    currentMemory.items = [];
+    if (currentMemory.meta) {
+      currentMemory.meta.turnCount = currentMemory.turns?.length || 0;
+    } else {
+      currentMemory.meta = {
+        version: 'mem/v1',
+        turnCount: currentMemory.turns?.length || 0,
+        tokenBytes: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const result = await importSessionMemory(currentMemory);
+    return result;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to clear long-term memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Clear all memory (including conversation turns)
+export const clearAllMemory = async (sessionId: string): Promise<{
+  sessionId: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
+  memoryMeta: {
+    sizeBytes: number;
+    chunkCount: number;
+    version: string;
+  };
+}> => {
+  try {
+    // Create empty memory
+    const emptyMemory: SessionMemory = {
+      sessionId,
+      turns: [],
+      items: [],
+      summary: '',
+      meta: {
+        version: 'mem/v1',
+        turnCount: 0,
+        tokenBytes: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    const result = await importSessionMemory(emptyMemory);
+    return result;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to clear all memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Clear long-term memory (preserves conversation turns and summary)
+export const clearLongTermMemoryEndpoint = async (
+  sessionId: string,
+  memoryToken?: string,
+  memoryChunks?: string[]
+): Promise<{
+  sessionId: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
+  memoryMeta: {
+    sizeBytes: number;
+    chunkCount: number;
+    version: string;
+  };
+}> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/sessions/clear-long-memory`, {
+      sessionId,
+      memoryToken,
+      memoryChunks: memoryChunks ? JSON.stringify(memoryChunks) : undefined
+    }, {
+      headers: {
+        'X-Client-Id': getClientId(),
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to clear long-term memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Clear all memory (creates completely fresh memory)
+export const clearAllMemoryEndpoint = async (
+  sessionId: string,
+  memoryToken?: string,
+  memoryChunks?: string[]
+): Promise<{
+  sessionId: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
+  memoryMeta: {
+    sizeBytes: number;
+    chunkCount: number;
+    version: string;
+  };
+}> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/sessions/clear-all-memory`, {
+      sessionId,
+      memoryToken,
+      memoryChunks: memoryChunks ? JSON.stringify(memoryChunks) : undefined
+    }, {
+      headers: {
+        'X-Client-Id': getClientId(),
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to clear all memory: ${axiosError.response?.data || axiosError.message}`);
   }
 };

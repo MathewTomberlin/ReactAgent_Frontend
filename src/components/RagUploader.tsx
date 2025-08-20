@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadPdf, clearRag } from '../api/RagClient';
 import { useSettings } from '../context/SettingsContext';
+import { Tooltip } from './Tooltip';
 
 type FileState = {
   id: string;
@@ -128,20 +129,24 @@ export const RagUploader = ({ sessionId }: { sessionId?: string }) => {
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-700">Selected: {files.length} file{files.length > 1 ? 's' : ''}</div>
             <div className="space-x-2">
-              <button
-                onClick={startUpload}
-                disabled={busy || files.every(f => f.status === 'uploaded')}
-                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {busy ? 'Uploading...' : 'Upload'}
-              </button>
-              <button
-                onClick={clearSession}
-                disabled={busy}
-                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-              >
-                Clear Session Docs
-              </button>
+              <Tooltip content="Upload the selected PDF files to make their content available for AI responses in this session.">
+                <button
+                  onClick={startUpload}
+                  disabled={busy || files.every(f => f.status === 'uploaded')}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {busy ? 'Uploading...' : 'Upload'}
+                </button>
+              </Tooltip>
+              <Tooltip content="Remove all uploaded documents from this session. The AI will no longer have access to their content.">
+                <button
+                  onClick={clearSession}
+                  disabled={busy}
+                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Clear Session Docs
+                </button>
+              </Tooltip>
             </div>
           </div>
 
