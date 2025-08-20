@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, exportSession, importSession } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -62,7 +62,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
-  const [memorySize, setMemorySize] = useState<number>(0);
   const [sessionId, setSessionId] = useState<string>('');
 
   // Check admin status on mount
@@ -224,7 +223,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (meta.memoryToken || meta.memoryChunks) {
             const m = { token: meta.memoryToken, chunks: meta.memoryChunks };
             localStorage.setItem(memKey, JSON.stringify(m));
-            setMemorySize(meta.memoryMeta?.sizeBytes || 0);
           }
         } else if (evt.type === 'error') {
           // Mark done; handle rate limit or generic error; do not fallback
@@ -286,7 +284,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             if (meta.memoryToken || meta.memoryChunks) {
               const m = { token: meta.memoryToken, chunks: meta.memoryChunks };
               localStorage.setItem(memKey, JSON.stringify(m));
-              setMemorySize(meta.memoryMeta?.sizeBytes || 0);
             }
           } catch (e) {
             // handled by outer catch
