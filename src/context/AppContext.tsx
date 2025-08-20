@@ -381,6 +381,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             setMessages(prev => prev.length ? [...prev.slice(0, -1), rateMsg] : [rateMsg]);
             setConnectionStatus('online');
           } else {
+            // Print provider/OpenAI/Anthropic error message as its own chat message
             const errorMsg: Message = {
               sender: 'agent',
               text: msg,

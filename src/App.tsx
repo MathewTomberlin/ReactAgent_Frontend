@@ -463,6 +463,7 @@ function App() {
                               {msg.metadata.model}
                             </span>
                           )}
+                          {/* Provider errors are now separate messages; no inline badges */}
                           {settings.displayCachedIndicator && msg.metadata.isCached && msg.sender === 'agent' && (
                             <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
                           )}

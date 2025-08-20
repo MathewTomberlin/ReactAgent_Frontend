@@ -174,6 +174,11 @@ export const streamChat = (
     try { onEvent({ type: 'answer', data: JSON.parse((e as MessageEvent).data) }); } catch {}
     es.close();
   });
+  // Provider error: render as a separate message but do not close the stream yet
+  es.addEventListener('provider-error', (e) => {
+    try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+  });
+  // Fatal stream error
   es.addEventListener('error', (e) => {
     try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
     es.close();

@@ -68,9 +68,30 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
     loadProviders();
   }, []);
 
-  // Update models when provider changes
+  // Calculate provider info - moved before useEffect to avoid initialization issues
+  const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
+  const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
+  const needsApiKey = selectedProvider && !isLocalProvider && selectedProvider !== 'gemini';
+
+  // Update models when provider changes or API key is provided
   useEffect(() => {
     if (!selectedProvider) return;
+
+    // Only load models if:
+    // 1. It's a local provider (Ollama), OR
+    // 2. It's Gemini (built-in), OR
+    // 3. It's a remote provider with API key
+    const shouldLoadModels = isLocalProvider ||
+                            selectedProvider === 'gemini' ||
+                            (needsApiKey && apiKey && apiKey.trim() !== '');
+
+    if (!shouldLoadModels) {
+      setModels([]);
+      if (selectedModel) {
+        onModelChange('');
+      }
+      return;
+    }
 
     const loadModels = async () => {
       try {
@@ -83,6 +104,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
           onModelChange(response.models[0].id);
         }
       } catch (error) {
+        console.error('Failed to load models:', error);
         setModels([]);
       } finally {
         setLoading(false);
@@ -90,10 +112,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
     };
 
     loadModels();
-  }, [selectedProvider, selectedModel, onModelChange]);
-
-  const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
-  const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
+  }, [selectedProvider, apiKey, isLocalProvider, needsApiKey, selectedModel, onModelChange]);
 
   // Load current provider configuration on mount
   useEffect(() => {
@@ -118,24 +137,26 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
 
   // Save configuration when it changes
   const saveConfig = async () => {
-    if (!selectedProvider || !selectedModel) return;
+    if (!selectedProvider) return;
 
     try {
       await saveProviderConfig({
         providerId: selectedProvider,
-        modelId: selectedModel,
+        modelId: selectedModel || undefined,
         apiKey: apiKey || undefined,
         baseUrl: baseUrl || undefined,
         parameters: modelConfig,
       });
-      await setCurrentProvider(selectedProvider, selectedModel);
-      // Persist selection locally so other parts of the app can read without extra API calls
-      try {
-        localStorage.setItem('currentProviderId', selectedProvider);
-        localStorage.setItem('currentModelId', selectedModel);
-      } catch {}
+      if (selectedModel) {
+        await setCurrentProvider(selectedProvider, selectedModel);
+        // Persist selection locally so other parts of the app can read without extra API calls
+        try {
+          localStorage.setItem('currentProviderId', selectedProvider);
+          localStorage.setItem('currentModelId', selectedModel);
+        } catch {}
+      }
     } catch (error) {
-      // ignore
+      console.error('Failed to save provider config:', error);
     }
   };
 
@@ -193,22 +214,48 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
             <select
               value={selectedModel}
               onChange={(e) => onModelChange(e.target.value)}
-              disabled={loading}
+              disabled={loading || (needsApiKey && (!apiKey || apiKey.trim() === ''))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
             >
-              <option value="">{loading ? 'Loading models...' : 'Select Model'}</option>
-              {models.map(model => (
-                <option key={model.id} value={model.id}>
-                  {model.name} - {model.description}
-                </option>
-              ))}
+              {loading ? (
+                <option value="">Loading models...</option>
+              ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
+                <option value="">Enter API Key to select model</option>
+              ) : models.length === 0 ? (
+                <option value="">No models available</option>
+              ) : (
+                <>
+                  <option value="">Select Model</option>
+                  {models.map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} - {model.description}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </Tooltip>
         </div>
       )}
 
       {/* Configuration */}
-      {selectedProvider && selectedProvider !== 'gemini' && (
+      {needsApiKey && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">API Key</label>
+          <Tooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => onApiKeyChange(e.target.value)}
+              placeholder={`Enter ${selectedProviderInfo?.name} API key`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </Tooltip>
+        </div>
+      )}
+
+      {/* Local Provider Configuration */}
+      {selectedProvider && isLocalProvider && selectedProvider !== 'gemini' && (
         <div className="space-y-2">
           {isLocalProvider ? (
             <>
