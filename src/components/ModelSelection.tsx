@@ -71,7 +71,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
   // Calculate provider info - moved before useEffect to avoid initialization issues
   const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
   const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
-  const needsApiKey = selectedProvider && !isLocalProvider && selectedProvider !== 'gemini';
+  const needsApiKey: boolean = !!(selectedProvider && !isLocalProvider && selectedProvider !== 'gemini');
 
   // Update models when provider changes or API key is provided
   useEffect(() => {

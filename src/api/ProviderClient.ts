@@ -82,7 +82,7 @@ export async function getModelConfig(providerId: string, modelId: string): Promi
  */
 export async function saveProviderConfig(config: {
   providerId: string;
-  modelId: string;
+  modelId?: string;
   apiKey?: string;
   baseUrl?: string;
   parameters?: ModelConfig;
