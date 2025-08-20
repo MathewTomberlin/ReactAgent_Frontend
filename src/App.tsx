@@ -7,6 +7,7 @@ import { RagUploader } from './components/RagUploader'
 
 import { MemoryManagement } from './components/MemoryManagement'
 import { Tooltip } from './components/Tooltip'
+import { ModelSelection } from './components/ModelSelection'
 import { initializeMobileViewport } from './utils/mobileViewport'
 import './App.css'
 
@@ -17,6 +18,8 @@ function App() {
     isLoading,
     isRateLimited,
     rateLimitCooldown,
+    isModelBusy,
+    modelBusyText,
     connectionStatus,
     sessionId,
     importMemory,
@@ -30,6 +33,13 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Model selection state
+  const [selectedProvider, setSelectedProvider] = useState('gemini');
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
+  const [modelConfig, setModelConfig] = useState<{ temperature: number; maxTokens: number; topP: number; [key: string]: any }>({ temperature: 0.7, maxTokens: 150, topP: 0.8 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -152,6 +162,22 @@ function App() {
             </div>
           </CollapsibleGroup>
           
+          {/* Model Selection */}
+          <CollapsibleGroup title="Model" defaultExpanded={true}>
+            <ModelSelection
+              selectedProvider={selectedProvider}
+              selectedModel={selectedModel}
+              apiKey={apiKey}
+              baseUrl={baseUrl}
+              modelConfig={modelConfig}
+              onProviderChange={setSelectedProvider}
+              onModelChange={setSelectedModel}
+              onApiKeyChange={setApiKey}
+              onBaseUrlChange={setBaseUrl}
+              onConfigChange={setModelConfig}
+            />
+          </CollapsibleGroup>
+
           {/* Chat Settings */}
           <CollapsibleGroup title="Chat Settings" defaultExpanded={true}>
             <ChatSettings />
@@ -271,6 +297,23 @@ function App() {
               </div>
             </div>
             
+            {/* Model Selection */}
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-gray-600 mb-2">Model</h4>
+              <ModelSelection
+                selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
+                apiKey={apiKey}
+                baseUrl={baseUrl}
+                modelConfig={modelConfig}
+                onProviderChange={setSelectedProvider}
+                onModelChange={setSelectedModel}
+                onApiKeyChange={setApiKey}
+                onBaseUrlChange={setBaseUrl}
+                onConfigChange={setModelConfig}
+              />
+            </div>
+
             {/* Chat Settings */}
             <div className="mb-4">
               <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
@@ -445,9 +488,13 @@ function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                placeholder={
+                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  "Type your message..."
+                }
                 className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading /* allow typing while rate limited */}
+                disabled={isModelBusy && selectedProvider === 'ollama'}
               />
               
               {/* Mobile Textarea */}
@@ -456,17 +503,21 @@ function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                placeholder={
+                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  "Type your message..."
+                }
                 className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
-                disabled={isLoading /* allow typing while rate limited */}
+                disabled={isModelBusy && selectedProvider === 'ollama'}
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
             
             <button
               onClick={handleSubmit}
-              disabled={isLoading || isRateLimited || input.trim() === ""}
+              disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || input.trim() === ""}
               className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
               title="Send message"
             >
@@ -476,10 +527,15 @@ function App() {
             </button>
           </div>
           
-          {/* Rate Limit Warning */}
-          {isRateLimited && (
+          {/* Rate Limit / Busy Warning */}
+          {isRateLimited && selectedProvider !== 'ollama' && (
             <div className="mt-2 text-xs text-red-600 text-center">
               Rate limit active. You can send 1 message per minute.
+            </div>
+          )}
+          {isModelBusy && selectedProvider === 'ollama' && (
+            <div className="mt-2 text-xs text-amber-600 text-center">
+              {modelBusyText || 'Model is busy (loading/unloading). Please wait...'}
             </div>
           )}
         </div>

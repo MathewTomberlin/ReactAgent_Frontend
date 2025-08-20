@@ -78,6 +78,16 @@ export const sendChatMessage = async (request: MessageRequest): Promise<ChatResp
     // Handle rate limiting
     if (axiosError.response?.status === 429) {
       const errorData = axiosError.response.data as any;
+      try {
+        const prov = localStorage.getItem('currentProviderId');
+        if (prov && prov.toLowerCase() === 'ollama') {
+          // For local providers, do not propagate rate limit as an error; treat as a normal response
+          return {
+            message: (errorData?.message as string) || 'Model busy, please try again.',
+            cached: false,
+          } as ChatResponse;
+        }
+      } catch {}
       throw {
         message: errorData?.message || "Rate limit exceeded. Please wait before sending another message.",
         status: 429,

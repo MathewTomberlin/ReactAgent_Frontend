@@ -26,6 +26,8 @@ interface AppState {
   isLoading: boolean;
   isRateLimited: boolean;
   rateLimitCooldown: number; // seconds remaining
+  isModelBusy: boolean;
+  modelBusyText?: string;
   connectionStatus: 'online' | 'offline' | 'checking';
   cacheStats: {
     hits: number;
@@ -46,6 +48,8 @@ const AppContext = createContext<AppState>({
   isLoading: false,
   isRateLimited: false,
   rateLimitCooldown: 0,
+  isModelBusy: false,
+  modelBusyText: undefined,
   connectionStatus: 'checking',
   cacheStats: null,
   isAdmin: false,
@@ -62,6 +66,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [rateLimitCooldown, setRateLimitCooldown] = useState(0);
+  const [isModelBusy, setIsModelBusy] = useState(false);
+  const [modelBusyText, setModelBusyText] = useState<string | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('online');
   const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -105,11 +111,35 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Helper to set busy state with optional auto-clear
+  const setBusy = useCallback((busy: boolean, text?: string) => {
+    setIsModelBusy(busy);
+    setModelBusyText(text);
+    if (busy) {
+      // Auto-clear after a short period, unless cleared earlier by a response
+      const t = setTimeout(() => {
+        setIsModelBusy(false);
+        setModelBusyText(undefined);
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+    return () => {};
+  }, []);
+
   // Rate limit countdown timer
   const startRateLimitCooldown = useCallback(() => {
+    // If using a local provider (Ollama), do not apply frontend cooldown
+    try {
+      const prov = localStorage.getItem('currentProviderId');
+      if (prov && prov.toLowerCase() === 'ollama') {
+        setIsRateLimited(false);
+        setRateLimitCooldown(0);
+        return;
+      }
+    } catch {}
+
     setIsRateLimited(true);
     setRateLimitCooldown(60); // 60 seconds
-    
     const interval = setInterval(() => {
       setRateLimitCooldown(prev => {
         if (prev <= 1) {
@@ -135,8 +165,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const sendToAgent = async (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
+    // Allow sending even if rate limited when local provider is selected
     if (isRateLimited) {
-      return; // Don't send if rate limited
+      try {
+        const prov = localStorage.getItem('currentProviderId');
+        if (!prov || prov.toLowerCase() !== 'ollama') {
+          return; // Don't send if rate limited for remote providers
+        }
+      } catch {
+        return;
+      }
     }
 
     addUserMessage(text);
@@ -192,6 +230,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         } else if (evt.type === 'answer') {
           done = true;
+          // Clear busy on successful answer
+          setBusy(false);
           const resp = evt.data as ChatResponse;
           const agentMessage: Message = {
             sender: 'agent',
@@ -245,7 +285,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             clearTimeout(indicatorTimer);
             indicatorTimer = undefined;
           }
-          if (msg.toLowerCase().includes('rate limit')) {
+          const prov = ((): string | null => { try { return localStorage.getItem('currentProviderId'); } catch { return null; }})();
+          if (msg.toLowerCase().includes('rate limit') && prov && prov.toLowerCase() === 'ollama') {
+            setBusy(true, 'Model is busy (loading/unloading). Please wait...');
+            setConnectionStatus('online');
+          } else if (msg.toLowerCase().includes('rate limit')) {
             startRateLimitCooldown();
             const rateMsg: Message = {
               sender: 'agent',
@@ -296,10 +340,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             };
             setMessages(prev => prev.length && prev[prev.length - 1].text.startsWith('Agent ') ? [...prev.slice(0, -1), agentMessage] : [...prev, agentMessage]);
             setConnectionStatus('online');
+            setBusy(false); // Clear busy on successful response
             setIsLoading(false);
-            if (!response.cached) {
-              startRateLimitCooldown();
-            }
+            try {
+              const prov = localStorage.getItem('currentProviderId');
+              if (!response.cached && (!prov || prov.toLowerCase() !== 'ollama')) {
+                startRateLimitCooldown();
+              }
+            } catch {}
             const meta = (response as any).metadata || {};
             if (meta.memoryToken || meta.memoryChunks) {
               const m = { token: meta.memoryToken, chunks: meta.memoryChunks };
@@ -317,6 +365,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const apiError = error as ApiError;
       
       if (apiError.isRateLimited) {
+        try {
+          const prov = localStorage.getItem('currentProviderId');
+          if (prov && prov.toLowerCase() === 'ollama') {
+            setBusy(true, 'Model is busy (loading/unloading). Please wait...');
+            setIsLoading(false);
+            return;
+          }
+        } catch {}
         startRateLimitCooldown();
         setMessages(prev => [...prev, {
           sender: "agent",
@@ -371,11 +427,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AppContext.Provider value={{
+    <AppContext.Provider     value={{
       messages,
       isLoading,
       isRateLimited,
       rateLimitCooldown,
+      isModelBusy,
+      modelBusyText,
       connectionStatus,
       cacheStats,
       isAdmin,
