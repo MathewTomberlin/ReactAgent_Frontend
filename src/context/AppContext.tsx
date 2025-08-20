@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, type ModelStatus } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -36,11 +36,17 @@ interface AppState {
   } | null;
   isAdmin: boolean;
   sessionId: string;
+  // Model loading states
+  modelStatus: ModelStatus | null;
+  isModelLoading: boolean;
+  isModelUnloading: boolean;
+  isProviderBusy: boolean;
   importMemory: (memoryToken?: string, memoryChunks?: string[]) => void;
   addUserMessage: (message: string) => void;
   sendToAgent: (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
   clearMessages: () => void;
   retryLastMessage: (settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
+  refreshModelStatus: () => Promise<void>;
 }
 
 const AppContext = createContext<AppState>({
@@ -54,11 +60,16 @@ const AppContext = createContext<AppState>({
   cacheStats: null,
   isAdmin: false,
   sessionId: '',
+  modelStatus: null,
+  isModelLoading: false,
+  isModelUnloading: false,
+  isProviderBusy: false,
   importMemory: () => {},
   addUserMessage: () => {},
   sendToAgent: () => {},
   clearMessages: () => {},
   retryLastMessage: () => {},
+  refreshModelStatus: async () => {},
 });
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
@@ -73,6 +84,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
   const [sessionId, setSessionId] = useState<string>('');
+  // Model loading states
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [isModelUnloading, setIsModelUnloading] = useState(false);
+  const [isProviderBusy, setIsProviderBusy] = useState(false);
 
   // Check admin status on mount
   useEffect(() => {
@@ -126,6 +142,66 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {};
   }, []);
 
+  // Refresh model status from backend
+  const refreshModelStatus = useCallback(async () => {
+    try {
+      const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+
+      if (providerId === 'ollama') {
+        const status = await getCurrentModelStatus();
+        setModelStatus(status);
+        setIsModelLoading(status.state === 'LOADING');
+        setIsModelUnloading(status.state === 'UNLOADING');
+
+        // Check if Ollama provider is busy
+        const busy = await isProviderBusyApi(providerId);
+        setIsProviderBusy(busy);
+      } else {
+        // For non-Ollama providers, set default state
+        setModelStatus({
+          providerId,
+          modelId: localStorage.getItem('currentModelId') || 'gemini-1.5-flash',
+          state: 'IDLE',
+          message: 'Model is ready',
+          timestamp: Date.now()
+        });
+        setIsModelLoading(false);
+        setIsModelUnloading(false);
+        setIsProviderBusy(false);
+      }
+    } catch (error) {
+      console.error('Failed to refresh model status:', error);
+      // Set default idle state on error
+      const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+      setModelStatus({
+        providerId,
+        modelId: localStorage.getItem('currentModelId') || 'gemini-1.5-flash',
+        state: 'IDLE',
+        message: 'Model is ready',
+        timestamp: Date.now()
+      });
+      setIsModelLoading(false);
+      setIsModelUnloading(false);
+      setIsProviderBusy(false);
+    }
+  }, []);
+
+  // Poll model status periodically
+  useEffect(() => {
+    const pollStatus = () => {
+      const providerId = localStorage.getItem('currentProviderId');
+      // Poll for all providers to ensure we catch provider switches
+      if (providerId) {
+        refreshModelStatus();
+      }
+    };
+
+    pollStatus(); // Initial check
+    const interval = setInterval(pollStatus, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [refreshModelStatus]);
+
   // Rate limit countdown timer
   const startRateLimitCooldown = useCallback(() => {
     // If using a local provider (Ollama), do not apply frontend cooldown
@@ -165,6 +241,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const sendToAgent = async (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
+    // Prevent sending if model is currently loading/unloading
+    if (isModelLoading || isModelUnloading || isProviderBusy) {
+      console.log('Cannot send message: Model is currently loading/unloading');
+      return;
+    }
+
     // Allow sending even if rate limited when local provider is selected
     if (isRateLimited) {
       try {
@@ -438,11 +520,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       cacheStats,
       isAdmin,
       sessionId,
+      modelStatus,
+      isModelLoading,
+      isModelUnloading,
+      isProviderBusy,
       importMemory,
       addUserMessage,
       sendToAgent,
       clearMessages,
-      retryLastMessage
+      retryLastMessage,
+      refreshModelStatus
     }}>
       {children}
     </AppContext.Provider>

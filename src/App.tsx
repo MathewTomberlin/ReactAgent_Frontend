@@ -24,7 +24,10 @@ function App() {
     sessionId,
     importMemory,
     clearMessages,
-    retryLastMessage
+    retryLastMessage,
+    isModelLoading,
+    isModelUnloading,
+    isProviderBusy
   } = useAppContext();
   
   const { settings, updateSettings } = useSettings();
@@ -34,9 +37,9 @@ function App() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
-  // Model selection state
-  const [selectedProvider, setSelectedProvider] = useState('gemini');
-  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash');
+  // Model selection state - initialize from localStorage
+  const [selectedProvider, setSelectedProvider] = useState(() => localStorage.getItem('currentProviderId') || 'gemini');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('currentModelId') || 'gemini-1.5-flash');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
   const [modelConfig, setModelConfig] = useState<{ temperature: number; maxTokens: number; topP: number; [key: string]: any }>({ temperature: 0.7, maxTokens: 150, topP: 0.8 });
@@ -64,6 +67,15 @@ function App() {
     return cleanup;
   }, []);
 
+  // Sync provider/model selection with localStorage
+  useEffect(() => {
+    localStorage.setItem('currentProviderId', selectedProvider);
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('currentModelId', selectedModel);
+  }, [selectedModel]);
+
   useEffect(()=>{
     const checkKeyboardState = () => {
       const isVisible = document.body.classList.contains('keyboard-visible');
@@ -77,7 +89,7 @@ function App() {
   }, [keyboardVisible]);
 
   const handleSubmit = async () => {
-    if (input.trim() !== "" && !isRateLimited && !isLoading) {
+    if (input.trim() !== "" && !isRateLimited && !isLoading && !isModelLoading && !isModelUnloading && !isProviderBusy) {
       await sendToAgent(input, settings);
       setInput('');
     }
@@ -400,6 +412,20 @@ function App() {
             </div>
           ) : (
             <>
+              {/* Model Loading/Unloading Indicator */}
+              {(isModelLoading || isModelUnloading || isProviderBusy) && (
+                <div className="flex justify-center mb-4">
+                  <div className="flex items-center space-x-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700"></div>
+                    <span className="text-sm">
+                      {isModelLoading ? `Loading model...` :
+                       isModelUnloading ? `Unloading model...` :
+                       `Model is busy...`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -491,10 +517,13 @@ function App() {
                 placeholder={
                   (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
                   (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  isModelLoading ? 'Loading model...' :
+                  isModelUnloading ? 'Unloading model...' :
+                  isProviderBusy ? 'Model is busy...' :
                   "Type your message..."
                 }
                 className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isModelBusy && selectedProvider === 'ollama'}
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
               />
               
               {/* Mobile Textarea */}
@@ -506,18 +535,21 @@ function App() {
                 placeholder={
                   (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
                   (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  isModelLoading ? 'Loading model...' :
+                  isModelUnloading ? 'Unloading model...' :
+                  isProviderBusy ? 'Model is busy...' :
                   "Type your message..."
                 }
                 className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
-                disabled={isModelBusy && selectedProvider === 'ollama'}
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
             
             <button
               onClick={handleSubmit}
-              disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || input.trim() === ""}
+              disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === ""}
               className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
               title="Send message"
             >

@@ -66,6 +66,15 @@ export interface ApiError {
   isNetworkError?: boolean;
 }
 
+// Model status interfaces
+export interface ModelStatus {
+  providerId: string;
+  modelId: string;
+  state: 'IDLE' | 'LOADING' | 'UNLOADING' | 'LOADED' | 'ERROR';
+  message: string;
+  timestamp: number;
+}
+
 // Enhanced API client with better error handling
 export const sendChatMessage = async (request: MessageRequest): Promise<ChatResponse> => {
   try {
@@ -457,5 +466,55 @@ export const clearAllMemoryEndpoint = async (
   } catch (error) {
     const axiosError = error as AxiosError;
     throw new Error(`Failed to clear all memory: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+// Model status API functions
+export const getModelStatus = async (providerId: string, modelId: string): Promise<ModelStatus> => {
+  try {
+    const response = await axios.get<ModelStatus>(`${BASE_URL}/api/model-status/provider/${providerId}/model/${modelId}`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to get model status: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+export const isProviderBusy = async (providerId: string): Promise<boolean> => {
+  try {
+    const response = await axios.get<boolean>(`${BASE_URL}/api/model-status/provider/${providerId}/busy`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to check provider busy status: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
+export const getCurrentModelStatus = async (): Promise<ModelStatus> => {
+  try {
+    const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+    let modelId = localStorage.getItem('currentModelId') || 'gemini-1.5-flash';
+
+    // For Ollama, use a default model if none is set
+    if (providerId === 'ollama' && (!modelId || modelId.startsWith('gemini'))) {
+      modelId = 'llama2'; // Default Ollama model
+    }
+
+    const response = await axios.get<ModelStatus>(`${BASE_URL}/api/model-status/current?providerId=${providerId}&modelId=${modelId}`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    // For non-Ollama providers, return a default idle state
+    const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+    if (providerId !== 'ollama') {
+      return {
+        providerId,
+        modelId: localStorage.getItem('currentModelId') || 'gemini-1.5-flash',
+        state: 'IDLE',
+        message: 'Model is ready',
+        timestamp: Date.now()
+      };
+    }
+    throw new Error(`Failed to get current model status: ${axiosError.response?.data || axiosError.message}`);
   }
 };
