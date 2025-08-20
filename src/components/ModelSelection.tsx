@@ -48,22 +48,16 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       try {
         setLoading(true);
         const response = await getProviders();
+        console.log('Frontend: Providers response:', response);
+        console.log('Frontend: Available providers:', response.availableProviders);
+        console.log('Frontend: Is local environment:', response.isLocal);
         setProviders(response.availableProviders || []);
       } catch (error) {
-        // Fallback to basic providers including Ollama if running locally
+        console.error('Failed to load providers from API:', error);
+        // Fallback to only the built-in provider
         const fallbackProviders: Provider[] = [
           { id: 'gemini', name: 'Google Gemini', type: 'remote', available: true },
         ];
-
-        // Add Ollama if running locally (localhost)
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-          fallbackProviders.push({
-            id: 'ollama',
-            name: 'Ollama (Local)',
-            type: 'local',
-            available: true
-          });
-        }
 
         setProviders(fallbackProviders);
       } finally {
