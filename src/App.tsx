@@ -199,6 +199,9 @@ function App() {
             {/* Connection Status */}
             <div className={`w-2 h-2 rounded-full ${getConnectionStatusColor()}`}></div>
             <span className="text-sm text-gray-500 hidden sm:inline">{getConnectionStatusText()}</span>
+
+            {/* Memory Size Indicator (if available via metadata updates) */}
+            {/* This assumes AppContext sets a memory size state and exposes it; for brevity, we can wire it here if needed */}
             
             {/* Rate Limit Indicator */}
             {isRateLimited && (

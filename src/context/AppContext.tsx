@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, exportSession, importSession } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -62,9 +62,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
+  const [memorySize, setMemorySize] = useState<number>(0);
+  const [sessionId, setSessionId] = useState<string>('');
 
   // Check admin status on mount
   useEffect(() => {
+    // ensure we have a session early to scope memory storage
+    (async () => {
+      try { const s = await getOrCreateSession(); setSessionId(s.sessionId); } catch {}
+    })();
     const checkAdmin = async () => {
       const adminStatus = await checkIsAdmin();
       setIsAdmin(adminStatus);
@@ -140,7 +146,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       let indicatorShown = false;
       let indicatorShownAt = 0;
 
-      const close = streamChat({ message: text }, (evt) => {
+      // load memory for this session
+      const memKey = `mem:${sessionId}`;
+      const raw = localStorage.getItem(memKey);
+      let memory: { token?: string; chunks?: string[] } | undefined;
+      if (raw) { try { memory = JSON.parse(raw); } catch {} }
+
+      const close = streamChat({ message: text, memoryToken: memory?.token }, (evt) => {
         if (evt.type === 'agent') {
           const statusText = evt.data?.message || 'Processing...';
           if (!indicatorShown && indicatorTimer === undefined) {
@@ -207,6 +219,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (!resp.cached) {
             startRateLimitCooldown();
           }
+          // capture memory token if present
+          const meta = (resp as any).metadata || {};
+          if (meta.memoryToken || meta.memoryChunks) {
+            const m = { token: meta.memoryToken, chunks: meta.memoryChunks };
+            localStorage.setItem(memKey, JSON.stringify(m));
+            setMemorySize(meta.memoryMeta?.sizeBytes || 0);
+          }
         } else if (evt.type === 'error') {
           // Mark done; handle rate limit or generic error; do not fallback
           done = true;
@@ -240,7 +259,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setTimeout(async () => {
         if (!done) {
           try {
-            const response: ChatResponse = await sendChatMessage({ message: text });
+            const response: ChatResponse = await sendChatMessage({ message: text, sessionId, memoryToken: memory?.token, memoryChunks: memory?.chunks });
             const agentMessage: Message = {
               sender: 'agent',
               text: response.message,
@@ -262,6 +281,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             setIsLoading(false);
             if (!response.cached) {
               startRateLimitCooldown();
+            }
+            const meta = (response as any).metadata || {};
+            if (meta.memoryToken || meta.memoryChunks) {
+              const m = { token: meta.memoryToken, chunks: meta.memoryChunks };
+              localStorage.setItem(memKey, JSON.stringify(m));
+              setMemorySize(meta.memoryMeta?.sizeBytes || 0);
             }
           } catch (e) {
             // handled by outer catch

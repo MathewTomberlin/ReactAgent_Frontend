@@ -53,6 +53,8 @@ export interface MessageRequest {
   temperature?: number;
   session_id?: string;
   sessionId?: string;
+  memoryToken?: string;
+  memoryChunks?: string[];
 }
 
 export interface ApiError {
@@ -66,7 +68,7 @@ export interface ApiError {
 export const sendChatMessage = async (request: MessageRequest): Promise<ChatResponse> => {
   try {
     console.log('Sending chat message to:', `${BASE_URL}/chat`);
-    const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request, { headers: { 'X-Client-Id': getClientId() } });
+    const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request, { headers: { 'X-Client-Id': getClientId(), ...(request.memoryToken ? { 'X-Memory-Token': request.memoryToken } : {}) } });
     return data;
   } catch (error) {
     const axiosError = error as AxiosError;
@@ -109,15 +111,29 @@ export const getOrCreateSession = async (): Promise<SessionResponse> => {
   return { sessionId: (data as any).sessionId } as SessionResponse;
 };
 
+export const exportSession = async (sessionId: string, memory?: { token?: string; chunks?: string[] }) => {
+  const params = new URLSearchParams({ sessionId });
+  if (memory?.token) params.set('memoryToken', memory.token);
+  if (memory?.chunks) params.set('memoryChunks', JSON.stringify(memory.chunks));
+  const { data } = await axios.get(`${BASE_URL}/sessions/export?${params.toString()}`);
+  return data;
+};
+
+export const importSession = async (memJson: any) => {
+  const { data } = await axios.post(`${BASE_URL}/sessions/import`, memJson);
+  return data as { sessionId: string; memoryToken?: string; memoryChunks?: string[]; memoryMeta?: any };
+};
+
 // SSE stream helper for realtime agent stages
 export const streamChat = (
-  params: { message: string; model?: string; temperature?: number },
+  params: { message: string; model?: string; temperature?: number; memoryToken?: string },
   onEvent: (evt: { type: 'agent' | 'answer' | 'error'; data: any }) => void
 ) => {
   const url = new URL(`${BASE_URL}/chat/stream`);
   url.searchParams.set('message', params.message);
   if (params.model) url.searchParams.set('model', params.model);
   if (typeof params.temperature === 'number') url.searchParams.set('temperature', String(params.temperature));
+  if (params.memoryToken) url.searchParams.set('memoryToken', params.memoryToken);
 
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());
