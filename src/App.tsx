@@ -169,6 +169,34 @@ function App() {
               {/* Chat */}
               <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
                 <div className="space-y-4">
+                  {/* System Sub-group */}
+                  <CollapsibleGroup title="System" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex flex-col space-y-3">
+                      <Tooltip content="Global instructions that guide the assistant's behavior across all responses.">
+                        <div>
+                          <label className="text-sm text-gray-700 cursor-pointer block mb-1">System Prompt</label>
+                          <textarea
+                            value={settings.systemPrompt}
+                            onChange={(e) => updateSettings({ systemPrompt: e.target.value })}
+                            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
+                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </Tooltip>
+                      <Tooltip content="A character or persona layer applied after the system prompt. Leave blank for none.">
+                        <div>
+                          <label className="text-sm text-gray-700 cursor-pointer block mb-1">Character Prompt</label>
+                          <textarea
+                            value={settings.characterPrompt || ''}
+                            onChange={(e) => updateSettings({ characterPrompt: e.target.value })}
+                            placeholder="You are a wise and intelligent software engineer and code reviewer."
+                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <div className="text-xs text-gray-500 mt-1">If set, it is appended after the System Prompt.</div>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
                   {/* Controls Sub-group */}
                   <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
                     <div className="flex justify-center space-x-2">

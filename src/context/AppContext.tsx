@@ -379,7 +379,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         memoryToken: memory?.token,
         disableLongMemoryRecall: options?.disableLongMemoryRecall,
         disableAllMemoryRecall: options?.disableAllMemoryRecall,
-        systemPrompt: (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt : undefined
+        systemPrompt: ((): string | undefined => {
+          const sys = (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt.trim() : '';
+          const ch = (settings.characterPrompt && settings.characterPrompt.trim().length > 0) ? settings.characterPrompt.trim() : '';
+          if (sys && ch) return `${sys}\n\n${ch}`;
+          if (sys) return sys;
+          if (ch) return ch; // if only character prompt is set, still pass as system to keep ordering first
+          return undefined;
+        })()
       }, (evt) => {
         if (evt.type === 'agent') {
           const statusText = evt.data?.message || 'Processing...';
@@ -500,7 +507,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               memoryChunks: memory?.chunks,
               disableLongMemoryRecall: options?.disableLongMemoryRecall,
               disableAllMemoryRecall: options?.disableAllMemoryRecall,
-              systemPrompt: (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt : undefined
+              systemPrompt: ((): string | undefined => {
+                const sys = (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt.trim() : '';
+                const ch = (settings.characterPrompt && settings.characterPrompt.trim().length > 0) ? settings.characterPrompt.trim() : '';
+                if (sys && ch) return `${sys}\n\n${ch}`;
+                if (sys) return sys;
+                if (ch) return ch;
+                return undefined;
+              })()
             });
             const agentMessage: Message = {
               sender: 'agent',

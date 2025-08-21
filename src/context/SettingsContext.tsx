@@ -9,6 +9,7 @@ interface ChatSettings {
   disableLongMemoryRecall: boolean;
   disableAllMemoryRecall: boolean;
   systemPrompt: string;
+  characterPrompt: string;
 }
 
 interface SettingsContextType {
@@ -26,6 +27,7 @@ const defaultSettings: ChatSettings = {
   disableLongMemoryRecall: false,
   disableAllMemoryRecall: false,
   systemPrompt: '',
+  characterPrompt: '',
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

@@ -17,6 +17,7 @@ import {
   setCurrentProvider,
   getCurrentProvider,
   saveProviderConfig,
+  getModelConfig,
   type Provider,
   type Model,
   type ModelConfig
@@ -52,6 +53,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
   const [providers, setProviders] = useState<Provider[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(false);
+  const [supportedParameters, setSupportedParameters] = useState<any[]>([]);
 
   // Load providers from API
   useEffect(() => {
@@ -121,6 +123,90 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
 
     loadModels();
   }, [selectedProvider, apiKey, isLocalProvider, needsApiKey, selectedModel, onModelChange]);
+
+  // Load model configuration when provider/model changes
+  useEffect(() => {
+    const loadModelConfig = async () => {
+      if (!selectedProvider) {
+        setSupportedParameters([]);
+        return;
+      }
+
+      // If no model yet, but provider supports parameters, show sensible defaults so users can configure
+      if (!selectedModel) {
+        if (selectedProvider === 'openai') {
+          setSupportedParameters([
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 },
+            { key: 'top_p', name: 'top_p', type: 'FLOAT', defaultValue: 1.0, description: 'Nucleus sampling parameter', min: 0, max: 1, step: 0.1 }
+          ]);
+          return;
+        } else if (selectedProvider === 'anthropic') {
+          setSupportedParameters([
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 }
+          ]);
+          return;
+        } else {
+          setSupportedParameters([]);
+          return;
+        }
+      }
+
+      try {
+        const configResponse = await getModelConfig(selectedProvider, selectedModel);
+        // Convert the parameters map to an array for easier rendering
+        let params = Object.entries(configResponse.parameters).map(([key, param]: [string, any]) => ({
+          key,
+          name: key,
+          type: param.type,
+          defaultValue: param.defaultValue,
+          description: param.description,
+          min: key.includes('temperature') || key.includes('topP') || key.includes('top_p') ? 0 :
+               key.includes('max') || key.includes('num_') ? 1 : undefined,
+          max: key.includes('temperature') || key.includes('topP') || key.includes('top_p') ? 1 :
+               key.includes('max') || key.includes('num_') ? 200000 : undefined,
+          step: key.includes('temperature') || key.includes('topP') || key.includes('top_p') ? 0.1 : 1
+        }));
+
+        // Fallbacks: if backend returns no parameters but provider is known to support them, provide sensible defaults
+        if ((!params || params.length === 0) && (selectedProvider === 'openai')) {
+          params = [
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 },
+            { key: 'top_p', name: 'top_p', type: 'FLOAT', defaultValue: 1.0, description: 'Nucleus sampling parameter', min: 0, max: 1, step: 0.1 }
+          ];
+        }
+        if ((!params || params.length === 0) && (selectedProvider === 'anthropic')) {
+          params = [
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 }
+          ];
+        }
+
+        setSupportedParameters(params);
+      } catch (error) {
+        console.error('Failed to load model config:', error);
+        // Fallback defaults when backend config fetch fails but provider is known to support params
+        if (selectedProvider === 'openai') {
+          setSupportedParameters([
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 },
+            { key: 'top_p', name: 'top_p', type: 'FLOAT', defaultValue: 1.0, description: 'Nucleus sampling parameter', min: 0, max: 1, step: 0.1 }
+          ]);
+        } else if (selectedProvider === 'anthropic') {
+          setSupportedParameters([
+            { key: 'temperature', name: 'temperature', type: 'FLOAT', defaultValue: 0.7, description: 'Controls randomness (0.0-1.0)', min: 0, max: 1, step: 0.1 },
+            { key: 'max_tokens', name: 'max_tokens', type: 'INTEGER', defaultValue: 150, description: 'Maximum output tokens', min: 1, max: 200000, step: 1 }
+          ]);
+        } else {
+          setSupportedParameters([]);
+        }
+      }
+    };
+
+    loadModelConfig();
+  }, [selectedProvider, selectedModel]);
 
   // Load current provider configuration on mount
   useEffect(() => {
@@ -311,53 +397,47 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       )}
 
       {/* Model Parameters */}
-      {selectedModel && (
+      {supportedParameters.length > 0 && (
         <div className="space-y-2">
           <CollapsibleGroup title="Parameters" defaultExpanded={false}>
             <div className="flex flex-col space-y-4">
-              <ConditionalTooltip content="Controls randomness in responses. Lower values make output more focused and deterministic.">
-                <div className="flex flex-col space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Temperature</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={modelConfig.temperature || 0.7}
-                    onChange={(e) => onConfigChange({ ...modelConfig, temperature: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </ConditionalTooltip>
+              {supportedParameters.map((param) => {
+                // Get the current value from modelConfig
+                const currentValue = modelConfig[param.key as keyof typeof modelConfig] || param.defaultValue;
 
-              <ConditionalTooltip content="Maximum number of tokens to generate in the response.">
-                <div className="flex flex-col space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Max Tokens</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="200000"
-                    value={modelConfig.maxTokens || 150}
-                    onChange={(e) => onConfigChange({ ...modelConfig, maxTokens: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </ConditionalTooltip>
+                // Format parameter name for display
+                const displayName = param.key
+                  .replace(/([A-Z])/g, ' $1') // Add spaces before capitals
+                  .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+                  .replace(/maxOutputTokens/, 'Max Tokens')
+                  .replace(/max_tokens/, 'Max Tokens')
+                  .replace(/num_predict/, 'Max Tokens')
+                  .replace(/top_p/, 'Top P')
+                  .replace(/topP/, 'Top P')
+                  .replace(/top_k/, 'Top K')
+                  .replace(/num_ctx/, 'Context Window');
 
-              <ConditionalTooltip content="Nucleus sampling parameter. Controls diversity by considering only the top-p probability mass.">
-                <div className="flex flex-col space-y-1">
-                  <label className="text-sm font-medium text-gray-700">Top P</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={modelConfig.topP || 0.8}
-                    onChange={(e) => onConfigChange({ ...modelConfig, topP: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </ConditionalTooltip>
+                return (
+                  <ConditionalTooltip key={param.key} content={param.description}>
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-sm font-medium text-gray-700">{displayName}</label>
+                      <input
+                        type="number"
+                        min={param.min}
+                        max={param.max}
+                        step={param.step}
+                        value={currentValue}
+                        onChange={(e) => {
+                          const newValue = param.type === 'FLOAT' ?
+                            parseFloat(e.target.value) : parseInt(e.target.value);
+                          onConfigChange({ ...modelConfig, [param.key]: newValue });
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </ConditionalTooltip>
+                );
+              })}
             </div>
           </CollapsibleGroup>
         </div>

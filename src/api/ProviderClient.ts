@@ -103,7 +103,11 @@ export async function getProviderModels(providerId: string): Promise<{
 export async function getModelConfig(providerId: string, modelId: string): Promise<{
   parameters: ModelConfig;
 }> {
-  const response = await fetch(`${API_BASE}/api/providers/${providerId}/models/${modelId}/config`);
+  // Use query parameters to avoid URL encoding issues with path variables
+  const url = new URL(`${API_BASE}/api/providers/${providerId}/models/config`);
+  url.searchParams.set('modelId', modelId);
+
+  const response = await fetch(url.toString());
   if (!response.ok) {
     throw new Error('Failed to fetch model config');
   }
