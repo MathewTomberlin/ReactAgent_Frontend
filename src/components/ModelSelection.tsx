@@ -408,7 +408,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
                 // Format parameter name for display
                 const displayName = param.key
                   .replace(/([A-Z])/g, ' $1') // Add spaces before capitals
-                  .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+                  .replace(/^./, (str: string) => str.toUpperCase()) // Capitalize first letter
                   .replace(/maxOutputTokens/, 'Max Tokens')
                   .replace(/max_tokens/, 'Max Tokens')
                   .replace(/num_predict/, 'Max Tokens')
