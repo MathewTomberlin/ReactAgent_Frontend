@@ -59,9 +59,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       try {
         setLoading(true);
         const response = await getProviders();
-        console.log('Frontend: Providers response:', response);
-        console.log('Frontend: Available providers:', response.availableProviders);
-        console.log('Frontend: Is local environment:', response.isLocal);
         setProviders(response.availableProviders || []);
       } catch (error) {
         console.error('Failed to load providers from API:', error);

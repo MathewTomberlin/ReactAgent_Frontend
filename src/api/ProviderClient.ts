@@ -3,15 +3,12 @@ const getApiBaseUrl = (): string => {
   // If environment variable is set, check if it's valid for current context
   if (import.meta.env.VITE_API_BASE) {
     const envUrl = import.meta.env.VITE_API_BASE;
-    console.log('🔗 ProviderClient API Base URL: Environment variable set to:', envUrl);
 
     // If we're accessing from a different hostname than localhost/127.0.0.1,
     // and the env URL contains localhost, we need to make it dynamic
     if ((window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') &&
         (envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
-      console.log('🔗 ProviderClient API Base URL: Detected network access with localhost in env, using dynamic IP');
       const dynamicUrl = `http://${window.location.hostname}:8080`;
-      console.log('🔗 ProviderClient API Base URL: Dynamic URL:', dynamicUrl);
       return dynamicUrl;
     }
 
@@ -21,14 +18,12 @@ const getApiBaseUrl = (): string => {
 
   // If running on localhost (development), use localhost
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    console.log('🔗 ProviderClient API Base URL: Using localhost (development mode)');
     return "http://localhost:8080";
   }
 
   // If accessed from mobile/other device, use the same hostname as the frontend
   // but with port 8080 for the backend
   const apiUrl = `http://${window.location.hostname}:8080`;
-  console.log('🔗 ProviderClient API Base URL:', apiUrl, '(network mode from hostname:', window.location.hostname + ')');
   return apiUrl;
 };
 
@@ -78,20 +73,14 @@ export async function getProviders(): Promise<{
   userHome: string;
   javaVendor: string;
 }> {
-  // Debug: Log the API_BASE and constructed URL
-  console.log('🔗 ProviderClient API_BASE:', API_BASE);
   const apiUrl = `${API_BASE}/api/providers`;
-  console.log('🔗 ProviderClient: Calling providers endpoint at:', apiUrl);
 
   const response = await fetch(apiUrl);
   if (!response.ok) {
-    console.error('❌ ProviderClient: Failed to fetch providers. Status:', response.status, 'StatusText:', response.statusText);
-    console.error('❌ ProviderClient: Response URL:', response.url);
     throw new Error(`Failed to fetch providers: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
-  console.log('✅ ProviderClient: Successfully fetched providers:', data);
   return data;
 }
 

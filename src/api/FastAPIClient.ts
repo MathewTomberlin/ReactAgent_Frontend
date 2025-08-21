@@ -5,15 +5,12 @@ const getApiBaseUrl = (): string => {
   // If environment variable is set, check if it's valid for current context
   if (import.meta.env.VITE_API_BASE) {
     const envUrl = import.meta.env.VITE_API_BASE;
-    console.log('🔗 API Base URL: Environment variable set to:', envUrl);
 
     // If we're accessing from a different hostname than localhost/127.0.0.1,
     // and the env URL contains localhost, we need to make it dynamic
     if ((window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') &&
         (envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
-      console.log('🔗 API Base URL: Detected network access with localhost in env, using dynamic IP');
       const dynamicUrl = `http://${window.location.hostname}:8080`;
-      console.log('🔗 API Base URL: Dynamic URL:', dynamicUrl);
       return dynamicUrl;
     }
 
@@ -23,14 +20,12 @@ const getApiBaseUrl = (): string => {
 
   // If running on localhost (development), use localhost
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    console.log('🔗 API Base URL: Using localhost (development mode)');
     return "http://localhost:8080";
   }
 
   // If accessed from mobile/other device, use the same hostname as the frontend
   // but with port 8080 for the backend
   const apiUrl = `http://${window.location.hostname}:8080`;
-  console.log('🔗 API Base URL:', apiUrl, '(network mode from hostname:', window.location.hostname + ')');
   return apiUrl;
 };
 
@@ -45,10 +40,7 @@ const getClientId = (): string => {
   return id;
 };
 
-// Debug logging for API URL detection
-console.log('Frontend URL:', window.location.href);
-console.log('Frontend hostname:', window.location.hostname);
-console.log('API Base URL:', BASE_URL);
+
 
 // TypeScript interfaces for the new API response format
 export interface ChatResponse {
@@ -96,7 +88,6 @@ export interface ModelStatus {
 // Enhanced API client with better error handling
 export const sendChatMessage = async (request: MessageRequest): Promise<ChatResponse> => {
   try {
-    console.log('Sending chat message to:', `${BASE_URL}/chat`);
     const { data } = await axios.post<ChatResponse>(`${BASE_URL}/chat`, request, { headers: { 'X-Client-Id': getClientId(), ...(request.memoryToken ? { 'X-Memory-Token': request.memoryToken } : {}) } });
     return data;
   } catch (error) {
@@ -221,13 +212,10 @@ export const sendMessage = async (message: string) => {
 // Health check endpoint
 export const checkHealth = async (): Promise<boolean> => {
   try {
-    console.log('Checking health at:', `${BASE_URL}/health`);
     const { data } = await axios.get(`${BASE_URL}/health`);
-    console.log('Health check response:', data);
     return data.status === "UP";
   } catch (error) {
     console.error("Health check failed:", error);
-    console.error("Failed URL:", `${BASE_URL}/health`);
     return false;
   }
 };
@@ -542,4 +530,57 @@ export const getCurrentModelStatus = async (): Promise<ModelStatus> => {
     }
     throw new Error(`Failed to get current model status: ${axiosError.response?.data || axiosError.message}`);
   }
+};
+
+// SSE stream for real-time model status updates
+export const streamModelStatus = (
+  providerId: string,
+  modelId: string,
+  onStatusUpdate: (status: ModelStatus) => void,
+  onError?: (error: any) => void
+) => {
+  // URL encode the modelId to handle special characters like colons and slashes
+  const encodedModelId = encodeURIComponent(modelId);
+  const url = new URL(`${BASE_URL}/api/model-status/stream`);
+  url.searchParams.set('providerId', providerId);
+  url.searchParams.set('modelId', encodedModelId);
+  url.searchParams.set('clientId', getClientId());
+  const es = new EventSource(url.toString());
+
+  es.addEventListener('status', (e) => {
+    try {
+      const status = JSON.parse((e as MessageEvent).data);
+      onStatusUpdate(status);
+    } catch (error) {
+      console.error('Failed to parse model status:', error);
+    }
+  });
+
+  es.addEventListener('error', (e) => {
+    // Handle server-sent error events (these have data)
+    try {
+      if ((e as MessageEvent).data) {
+        const errorData = JSON.parse((e as MessageEvent).data);
+        if (onError) onError(errorData);
+      }
+    } catch (error) {
+      console.error('Model status stream error:', error);
+      if (onError) onError(error);
+    }
+  });
+
+  es.onerror = (event) => {
+    console.warn('Model status SSE connection error:', event);
+
+    // Check if it's an HTTP error (401, 403, etc.)
+    // EventSource doesn't provide HTTP status codes directly, so we need to handle this differently
+    if (onError) {
+      onError(new Error('SSE connection failed - possibly authentication issue'));
+    }
+
+    // Close the connection on error
+    es.close();
+  };
+
+  return () => es.close();
 };

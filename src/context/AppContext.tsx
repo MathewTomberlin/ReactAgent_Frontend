@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useSettings } from './SettingsContext';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, type ModelStatus } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -188,20 +188,113 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Poll model status periodically
+  // Stream model status using SSE - replaces polling
   useEffect(() => {
-    const pollStatus = () => {
+    let closeStream: (() => void) | null = null;
+
+    const setupStreaming = () => {
+      // Close existing stream
+      if (closeStream) {
+        closeStream();
+        closeStream = null;
+      }
+
       const providerId = localStorage.getItem('currentProviderId');
-      // Poll for all providers to ensure we catch provider switches
-      if (providerId) {
-        refreshModelStatus();
+      const modelId = localStorage.getItem('currentModelId') || 'gemini-1.5-flash';
+
+      if (!providerId) {
+        return;
+      }
+
+      let finalModelId = modelId;
+      // For Ollama, use a default model if none is set
+      if (providerId === 'ollama' && (!modelId || modelId.startsWith('gemini'))) {
+        finalModelId = 'llama2'; // Default Ollama model
+      }
+
+      // For Ollama, use SSE streaming for real-time updates
+      if (providerId === 'ollama') {
+        closeStream = streamModelStatus(providerId, finalModelId,
+          (status) => {
+            setModelStatus(status);
+            setIsModelLoading(status.state === 'LOADING');
+            setIsModelUnloading(status.state === 'UNLOADING');
+          },
+          (error) => {
+            console.error('Model status stream error:', error);
+            // Fallback to polling if SSE fails
+            setTimeout(setupPollingFallback, 5000);
+          }
+        );
+      } else {
+        // For non-Ollama providers, use simple polling with longer intervals
+        setupPollingFallback();
       }
     };
 
-    pollStatus(); // Initial check
-    const interval = setInterval(pollStatus, 2000); // Poll every 2 seconds
+    const setupPollingFallback = () => {
+      // Close SSE stream if active
+      if (closeStream) {
+        closeStream();
+        closeStream = null;
+      }
 
-    return () => clearInterval(interval);
+      const pollStatus = async () => {
+        const providerId = localStorage.getItem('currentProviderId');
+        if (!providerId) return;
+
+        try {
+          // For non-Ollama providers, just update with idle state to avoid API calls
+          if (providerId !== 'ollama') {
+            setModelStatus({
+              providerId,
+              modelId: localStorage.getItem('currentModelId') || 'gemini-1.5-flash',
+              state: 'IDLE',
+              message: 'Model is ready',
+              timestamp: Date.now()
+            });
+            setIsModelLoading(false);
+            setIsModelUnloading(false);
+            setIsProviderBusy(false);
+            return;
+          }
+
+          // For Ollama, use the optimized refreshModelStatus that makes fewer calls
+          await refreshModelStatus();
+        } catch (error) {
+          console.error('Polling fallback error:', error);
+        }
+      };
+
+      pollStatus(); // Initial check
+
+      // Poll every 10 seconds for non-Ollama providers, 5 seconds for Ollama
+      const providerId = localStorage.getItem('currentProviderId');
+      const pollInterval = providerId === 'ollama' ? 5000 : 10000;
+
+      const interval = setInterval(pollStatus, pollInterval);
+
+      // Store cleanup function
+      closeStream = () => clearInterval(interval);
+    };
+
+    setupStreaming();
+
+    // Listen for provider changes to restart streaming
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'currentProviderId' || e.key === 'currentModelId') {
+        setupStreaming();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      if (closeStream) {
+        closeStream();
+      }
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [refreshModelStatus]);
 
   // Rate limit countdown timer
