@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from './context/AppContext'
 import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
-import { ChatSettings } from './components/ChatSettings'
 import { RagUploader } from './components/RagUploader'
 
 import { MemoryManagement } from './components/MemoryManagement'
@@ -31,7 +30,17 @@ function App() {
   } = useAppContext();
   
   const { settings, updateSettings } = useSettings();
-  
+
+  // Utility function to detect mobile devices
+  const isMobile = () => {
+    return window.innerWidth <= 768;
+  };
+
+  // Conditional Tooltip component that only shows on desktop
+  const ConditionalTooltip: React.FC<{ content: string | React.ReactNode; children: React.ReactNode; position?: "top" | "bottom" | "left" | "right" }> = ({ content, children, position }) => {
+    return isMobile() ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
+  };
+
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -136,79 +145,150 @@ function App() {
     <div className="flex h-screen bg-gray-50 overflow-hidden md:relative">
 
       {/* Sidebar - Desktop */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
-        <div className="p-4 w-64">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
-            <button
-              onClick={toggleSidebar}
-              className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
-              title="Close sidebar"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          
-          {/* Chat Controls */}
-          <CollapsibleGroup title="Chat Controls" defaultExpanded={true}>
-            <div className="space-y-2">
-              <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
-                <button
-                  onClick={clearMessages}
-                  className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                >
-                  Clear Chat
-                </button>
-              </Tooltip>
-              <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
-                <button
-                  onClick={() => retryLastMessage(settings)}
-                  disabled={!messages.length || isLoading || isRateLimited}
-                  className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Retry Last Message
-                </button>
-              </Tooltip>
+      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
+        <div className="h-full flex flex-col">
+          {/* Header - Fixed */}
+          <div className="flex-shrink-0 p-4 w-72">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
+              <button
+                onClick={toggleSidebar}
+                className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
+                title="Close sidebar"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-          </CollapsibleGroup>
-          
-          {/* Model Selection */}
-          <CollapsibleGroup title="Model" defaultExpanded={true}>
-            <ModelSelection
-              selectedProvider={selectedProvider}
-              selectedModel={selectedModel}
-              apiKey={apiKey}
-              baseUrl={baseUrl}
-              modelConfig={modelConfig}
-              onProviderChange={setSelectedProvider}
-              onModelChange={setSelectedModel}
-              onApiKeyChange={setApiKey}
-              onBaseUrlChange={setBaseUrl}
-              onConfigChange={setModelConfig}
-            />
-          </CollapsibleGroup>
+          </div>
 
-          {/* Chat Settings */}
-          <CollapsibleGroup title="Chat Settings" defaultExpanded={true}>
-            <ChatSettings />
-          </CollapsibleGroup>
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 w-72 space-y-4">
+              {/* Chat */}
+              <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
+                <div className="space-y-4">
+                  {/* Controls Sub-group */}
+                  <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex justify-center space-x-2">
+                      <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
+                        <button
+                          onClick={clearMessages}
+                          className="px-3 py-2 text-sm bg-red-200 text-gray-700 rounded hover:bg-red-300 transition-colors"
+                        >
+                          Clear Chat
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
+                        <button
+                          onClick={() => retryLastMessage(settings)}
+                          disabled={!messages.length || isLoading || isRateLimited}
+                          className="px-3 py-2 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Retry Last Message
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
 
-          {/* Knowledge - PDF Upload */}
-          <CollapsibleGroup title="Knowledge" defaultExpanded={false}>
-            <RagUploader />
-          </CollapsibleGroup>
+                  {/* Settings Sub-group */}
+                  <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex flex-col space-y-3">
+                      <Tooltip content="Show which AI model (e.g., Gemini 1.5 Flash) was used to generate each response.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayMessageModel-desktop"
+                            checked={settings.displayMessageModel}
+                            onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayMessageModel-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Message Model
+                          </label>
+                        </div>
+                      </Tooltip>
 
-          {/* Memory Management */}
-          <CollapsibleGroup title="Memory Management" defaultExpanded={false}>
-            <MemoryManagement
-              sessionId={sessionId}
-              onMemoryImport={importMemory}
-            />
-          </CollapsibleGroup>
+                      <Tooltip content="Show the number of tokens used in each request and response. Helps understand API usage costs.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayMessageTokens-desktop"
+                            checked={settings.displayMessageTokens}
+                            onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayMessageTokens-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Message Tokens
+                          </label>
+                        </div>
+                      </Tooltip>
 
+                      <Tooltip content="Show timestamps on messages to track when responses were generated.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayTimestamp-desktop"
+                            checked={settings.displayTimestamp}
+                            onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayTimestamp-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Timestamp
+                          </label>
+                        </div>
+                      </Tooltip>
 
+                      <Tooltip content="Show a lightning bolt icon on responses that were served from cache instead of generating a new response.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayCachedIndicator-desktop"
+                            checked={settings.displayCachedIndicator}
+                            onChange={() => updateSettings({ displayCachedIndicator: !settings.displayCachedIndicator })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayCachedIndicator-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Cached Indicator
+                          </label>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
+                </div>
+              </CollapsibleGroup>
+
+              {/* LLM Selection */}
+              <CollapsibleGroup title="LLM" defaultExpanded={false} className="collapsible-group-top">
+                <ModelSelection
+                  selectedProvider={selectedProvider}
+                  selectedModel={selectedModel}
+                  apiKey={apiKey}
+                  baseUrl={baseUrl}
+                  modelConfig={modelConfig}
+                  onProviderChange={setSelectedProvider}
+                  onModelChange={setSelectedModel}
+                  onApiKeyChange={setApiKey}
+                  onBaseUrlChange={setBaseUrl}
+                  onConfigChange={setModelConfig}
+                />
+              </CollapsibleGroup>
+
+              {/* Knowledge - PDF Upload */}
+              <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
+                <RagUploader />
+              </CollapsibleGroup>
+
+              {/* Memory */}
+              <CollapsibleGroup title="Memory" defaultExpanded={false} className="collapsible-group-top">
+                <MemoryManagement
+                  sessionId={sessionId}
+                  onMemoryImport={importMemory}
+                />
+              </CollapsibleGroup>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -272,9 +352,9 @@ function App() {
 
         {/* Mobile Menu */}
         {showMobileMenu && (
-          <div className="md:hidden bg-white border-b border-gray-200 p-4 mobile-menu">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-gray-700">Menu</h3>
+          <div className="md:hidden bg-white border-b border-gray-200 mobile-menu h-full flex flex-col">
+            <div className="flex items-center justify-between py-2 px-4 flex-shrink-0">
+              <h3 className="text-lg font-bold text-gray-800">Settings</h3>
               <button
                 onClick={toggleMobileMenu}
                 className="text-gray-500 hover:text-gray-700"
@@ -284,118 +364,130 @@ function App() {
                 </svg>
               </button>
             </div>
-            
-            {/* Chat Controls */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Controls</h4>
-              <div className="flex">
-                <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
-                  <button
-                    onClick={clearMessages}
-                    className="flex-1 px-3 py-2 text-sm bg-red-200 text-gray-700 rounded active:bg-red-100 "
-                  >
-                    Clear Chat
-                  </button>
-                </Tooltip>
-                <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
-                  <button
-                    onClick={() => retryLastMessage(settings)}
-                    disabled={!messages.length || isLoading || isRateLimited}
-                    className="flex-1 px-3 py-2 text-sm bg-blue-200 text-gray-700 rounded active:bg-blue-100"
-                  >
-                    Retry
-                  </button>
-                </Tooltip>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 pb-8 space-y-4">
+                {/* Chat */}
+                <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
+                  <div className="space-y-4">
+                    {/* Controls Sub-group */}
+                    <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex justify-center space-x-2">
+                        <button
+                          onClick={clearMessages}
+                          className="px-3 py-2 text-sm bg-red-200 text-gray-700 rounded hover:bg-red-300 transition-colors"
+                        >
+                          Clear Chat
+                        </button>
+                        <button
+                          onClick={() => retryLastMessage(settings)}
+                          disabled={!messages.length || isLoading || isRateLimited}
+                          className="px-3 py-2 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Retry Last Message
+                        </button>
+                      </div>
+                    </CollapsibleGroup>
+
+                    {/* Settings Sub-group */}
+                    <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex flex-col space-y-3">
+                        <ConditionalTooltip content="Show which AI model (e.g., Gemini 1.5 Flash) was used to generate each response.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayMessageModel-mobile"
+                              checked={settings.displayMessageModel}
+                              onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayMessageModel-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Message Model
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show the number of tokens used in each request and response. Helps understand API usage costs.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayMessageTokens-mobile"
+                              checked={settings.displayMessageTokens}
+                              onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayMessageTokens-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Message Tokens
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show timestamps on messages to track when responses were generated.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayTimestamp-mobile"
+                              checked={settings.displayTimestamp}
+                              onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayTimestamp-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Timestamp
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show a lightning bolt icon on responses that were served from cache instead of generating a new response.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayCachedIndicator-mobile"
+                              checked={settings.displayCachedIndicator}
+                              onChange={() => updateSettings({ displayCachedIndicator: !settings.displayCachedIndicator })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayCachedIndicator-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Cached Indicator
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+                      </div>
+                    </CollapsibleGroup>
+                  </div>
+                </CollapsibleGroup>
+
+                {/* LLM Selection */}
+                <CollapsibleGroup title="LLM" defaultExpanded={false} className="collapsible-group-top">
+                  <ModelSelection
+                    selectedProvider={selectedProvider}
+                    selectedModel={selectedModel}
+                    apiKey={apiKey}
+                    baseUrl={baseUrl}
+                    modelConfig={modelConfig}
+                    onProviderChange={setSelectedProvider}
+                    onModelChange={setSelectedModel}
+                    onApiKeyChange={setApiKey}
+                    onBaseUrlChange={setBaseUrl}
+                    onConfigChange={setModelConfig}
+                  />
+                </CollapsibleGroup>
+
+                {/* Knowledge - PDF Upload (mobile) */}
+                <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
+                  <RagUploader />
+                </CollapsibleGroup>
+
+                {/* Memory - Mobile */}
+                <CollapsibleGroup title="Memory" defaultExpanded={false} className="collapsible-group-top">
+                  <MemoryManagement
+                    sessionId={sessionId}
+                    onMemoryImport={importMemory}
+                  />
+                </CollapsibleGroup>
               </div>
             </div>
-            
-            {/* Model Selection */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Model</h4>
-              <ModelSelection
-                selectedProvider={selectedProvider}
-                selectedModel={selectedModel}
-                apiKey={apiKey}
-                baseUrl={baseUrl}
-                modelConfig={modelConfig}
-                onProviderChange={setSelectedProvider}
-                onModelChange={setSelectedModel}
-                onApiKeyChange={setApiKey}
-                onBaseUrlChange={setBaseUrl}
-                onConfigChange={setModelConfig}
-              />
-            </div>
-
-            {/* Chat Settings */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Model</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageModel}
-                    onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Tokens</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageTokens}
-                    onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
-
-              </div>
-            </div>
-
-            {/* Knowledge - PDF Upload (mobile) */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Knowledge (RAG)</h4>
-              <RagUploader />
-            </div>
-
-            {/* Memory Management - Mobile */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Memory Management</h4>
-              <MemoryManagement
-                sessionId={sessionId}
-                onMemoryImport={importMemory}
-              />
-            </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Model</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageModel}
-                    onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Tokens</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageTokens}
-                    onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Timestamp</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayTimestamp}
-                    onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
-              </div>
-            </div>
+          </div>
         )}
 
         {/* Messages Area */}

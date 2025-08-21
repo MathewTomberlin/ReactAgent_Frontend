@@ -89,9 +89,67 @@
     top: 60px;
     left: 0;
     right: 0;
+    bottom: 0;
     z-index: 100;
-    background: #DDDDDD;
+    background: white;
     border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Ensure scrollable content can scroll properly */
+  .mobile-menu > div:last-child {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Ensure content can be scrolled to the very bottom */
+  .mobile-menu .p-4 {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+
+  /* Background colors for collapsible groups */
+  .collapsible-group-top {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .collapsible-group-nested {
+    background-color: rgba(0, 0, 0, 0.15);
+  }
+
+  /* Ensure proper form spacing in mobile menu */
+  .mobile-menu .space-y-2 > * + * {
+    margin-top: 0.75rem !important;
+  }
+
+  .mobile-menu label {
+    font-weight: 500 !important;
+  }
+
+  .mobile-menu input[type="text"],
+  .mobile-menu input[type="number"],
+  .mobile-menu input[type="password"],
+  .mobile-menu select,
+  .mobile-menu textarea {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 14px !important;
+  }
+
+  .mobile-menu input[type="checkbox"] {
+    width: auto !important;
+    min-height: auto !important;
+    height: 1rem !important;
+    margin: 0 !important;
+  }
+
+  .mobile-menu textarea {
+    min-height: 80px !important;
+    resize: vertical !important;
   }
 }
 

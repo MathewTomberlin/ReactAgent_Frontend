@@ -2,6 +2,17 @@ import React, { useState } from 'react';
 import { exportSessionMemory, importSessionMemory, clearLongTermMemoryEndpoint, clearAllMemoryEndpoint, type SessionMemory } from '../api/FastAPIClient';
 import { useSettings } from '../context/SettingsContext';
 import { Tooltip } from './Tooltip';
+import { CollapsibleGroup } from './CollapsibleGroup';
+
+// Utility function to detect mobile devices
+const isMobile = () => {
+  return window.innerWidth <= 768;
+};
+
+// Conditional Tooltip component that only shows on desktop
+const ConditionalTooltip: React.FC<{ content: string | React.ReactNode; children: React.ReactNode; position?: string }> = ({ content, children, position }) => {
+  return isMobile() ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
+};
 
 interface MemoryManagementProps {
   sessionId: string;
@@ -151,126 +162,109 @@ export const MemoryManagement: React.FC<MemoryManagementProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Memory Control Settings */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-medium text-gray-600 mb-2">Memory Control:</h4>
-
-        <Tooltip content="When enabled, the agent won't use extracted facts, preferences, or goals from memory, but will still use recent conversation turns for context.">
-          <div className="flex items-center justify-between">
-            <label className="text-sm text-gray-700">Disable Long Recall</label>
-            <input
-              type="checkbox"
-              checked={settings.disableLongMemoryRecall}
-              onChange={(e) => updateSettings({ disableLongMemoryRecall: e.target.checked })}
-              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 ml-2"
-            />
-          </div>
-        </Tooltip>
-
-        <Tooltip content="When enabled, the agent won't use any memory at all, including recent conversation turns. Each message will be processed independently.">
-          <div className="flex items-center justify-between">
-            <label className="text-sm text-gray-700">Disable All Recall</label>
-            <input
-              type="checkbox"
-              checked={settings.disableAllMemoryRecall}
-              onChange={(e) => updateSettings({ disableAllMemoryRecall: e.target.checked })}
-              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 ml-2"
-            />
-          </div>
-        </Tooltip>
-      </div>
-
-      {/* Memory Export/Import */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-medium text-gray-600 mb-2">Memory Transfer:</h4>
-
-        <div>
-          <button
-            onClick={handleExport}
-            disabled={isExporting || !sessionId}
-            className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isExporting ? 'Exporting...' : '📤 Export Memory'}
-          </button>
-          {exportMessage && (
-            <p className="text-xs mt-1 text-gray-600 break-words">{exportMessage}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block w-full px-3 py-2 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 cursor-pointer transition-colors">
-            {isImporting ? 'Importing...' : '📥 Import Memory'}
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              disabled={isImporting}
-              className="hidden"
-            />
-          </label>
-          {importMessage && (
-            <p className="text-xs mt-1 text-gray-600 break-words">{importMessage}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Memory Clearing */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-medium text-gray-600 mb-2">Memory Clearing:</h4>
-
-        <Tooltip content="Clears extracted facts, preferences, and goals but keeps conversation history and summary for context.">
-          <div>
-            <button
-              onClick={handleClearLongTerm}
-              disabled={isClearingLong || !sessionId}
-              className="w-full px-3 py-2 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isClearingLong ? 'Clearing...' : '🧹 Clear Long Memory'}
-            </button>
-          </div>
-        </Tooltip>
-
-        <Tooltip content="Clears ALL memory including conversation history, facts, and summary. Starts completely fresh.">
-          <div>
-            <button
-              onClick={handleClearAll}
-              disabled={isClearingAll || !sessionId}
-              className="w-full px-3 py-2 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isClearingAll ? 'Clearing...' : '💥 Clear All Memory'}
-            </button>
-          </div>
-        </Tooltip>
-
-        {clearMessage && (
-          <p className="text-xs mt-1 text-gray-600 break-words">{clearMessage}</p>
-        )}
-      </div>
-
-      {/* Help Information with Icon */}
-      <div className="flex items-center justify-center pt-2">
-        <Tooltip
-          content={
-            <div className="text-sm max-w-xs">
-              <p className="font-medium mb-2">Memory System:</p>
-              <ul className="space-y-1 text-xs">
-                <li>• <strong>Long Memory:</strong> Facts, preferences, goals extracted from conversations</li>
-                <li>• <strong>Short Memory:</strong> Recent conversation turns for immediate context</li>
-                <li>• <strong>Summary:</strong> Rolling summary of the conversation</li>
-                <li>• Export/Import: Transfer memory between sessions</li>
-              </ul>
+      {/* Settings */}
+      <CollapsibleGroup title="Settings" defaultExpanded={false}>
+        <div className="flex flex-col space-y-3">
+          <ConditionalTooltip content="When enabled, the agent won't use extracted facts, preferences, or goals from memory, but will still use recent conversation turns for context.">
+            <div className="flex items-start space-x-2">
+              <input
+                type="checkbox"
+                id="disableLongMemoryRecall"
+                checked={settings.disableLongMemoryRecall}
+                onChange={(e) => updateSettings({ disableLongMemoryRecall: e.target.checked })}
+                className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+              />
+              <label htmlFor="disableLongMemoryRecall" className="text-sm text-gray-700 cursor-pointer flex-1">
+                Disable Long Recall
+              </label>
             </div>
-          }
-          position="top"
-        >
-          <div className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 cursor-help">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-xs">Memory Info</span>
+          </ConditionalTooltip>
+
+          <ConditionalTooltip content="When enabled, the agent won't use any memory at all, including recent conversation turns. Each message will be processed independently.">
+            <div className="flex items-start space-x-2">
+              <input
+                type="checkbox"
+                id="disableAllMemoryRecall"
+                checked={settings.disableAllMemoryRecall}
+                onChange={(e) => updateSettings({ disableAllMemoryRecall: e.target.checked })}
+                className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+              />
+              <label htmlFor="disableAllMemoryRecall" className="text-sm text-gray-700 cursor-pointer flex-1">
+                Disable All Recall
+              </label>
+            </div>
+          </ConditionalTooltip>
+        </div>
+      </CollapsibleGroup>
+
+      {/* Transfer */}
+      <CollapsibleGroup title="Transfer" defaultExpanded={false}>
+        <div className="space-y-3">
+          <div>
+            <button
+              onClick={handleExport}
+              disabled={isExporting || !sessionId}
+              className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isExporting ? 'Exporting...' : '📤 Export Memory'}
+            </button>
+            {exportMessage && (
+              <p className="text-xs mt-1 text-gray-600 break-words">{exportMessage}</p>
+            )}
           </div>
-        </Tooltip>
-      </div>
+
+          <div>
+            <label className="block w-full px-3 py-2 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 cursor-pointer transition-colors text-center">
+              {isImporting ? 'Importing...' : '📥 Import Memory'}
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                disabled={isImporting}
+                className="hidden"
+              />
+            </label>
+            {importMessage && (
+              <p className="text-xs mt-1 text-gray-600 break-words">{importMessage}</p>
+            )}
+          </div>
+        </div>
+      </CollapsibleGroup>
+
+      {/* Clearing */}
+      <CollapsibleGroup title="Clearing" defaultExpanded={false}>
+        <div className="space-y-3">
+          <ConditionalTooltip content="Clears extracted facts, preferences, and goals but keeps conversation history and summary for context.">
+            <div>
+              <button
+                onClick={handleClearLongTerm}
+                disabled={isClearingLong || !sessionId}
+                className="w-full px-3 py-2 text-sm bg-orange-100 text-orange-700 rounded hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isClearingLong ? 'Clearing...' : '🧹 Clear Long Memory'}
+              </button>
+            </div>
+          </ConditionalTooltip>
+
+          <ConditionalTooltip content="Clears ALL memory including conversation history, facts, and summary. Starts completely fresh.">
+            <div>
+              <button
+                onClick={handleClearAll}
+                disabled={isClearingAll || !sessionId}
+                className="w-full px-3 py-2 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isClearingAll ? 'Clearing...' : '💥 Clear All Memory'}
+              </button>
+            </div>
+          </ConditionalTooltip>
+
+          {clearMessage && (
+            <p className="text-xs mt-1 text-gray-600 break-words">{clearMessage}</p>
+          )}
+        </div>
+      </CollapsibleGroup>
+
+
     </div>
   );
 };

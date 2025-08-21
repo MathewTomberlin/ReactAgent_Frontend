@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Tooltip } from './Tooltip';
+import { CollapsibleGroup } from './CollapsibleGroup';
+
+// Utility function to detect mobile devices
+const isMobile = () => {
+  return window.innerWidth <= 768;
+};
+
+// Conditional Tooltip component that only shows on desktop
+const ConditionalTooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ content, children }) => {
+  return isMobile() ? <>{children}</> : <Tooltip content={content}>{children}</Tooltip>;
+};
 import {
   getProviders,
   getProviderModels,
@@ -185,7 +196,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       {/* Provider Selection */}
       <div className="space-y-2">
         <label className="text-sm font-medium text-gray-700">Provider</label>
-        <Tooltip content="Select the AI provider you want to use. Local providers are only available when running locally.">
+        <ConditionalTooltip content="Select the AI provider you want to use. Local providers are only available when running locally.">
           <select
             value={selectedProvider}
             onChange={(e) => onProviderChange(e.target.value)}
@@ -203,14 +214,14 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
               </option>
             )) || []}
           </select>
-        </Tooltip>
+        </ConditionalTooltip>
       </div>
 
       {/* Model Selection */}
       {selectedProvider && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">Model</label>
-          <Tooltip content="Select the specific model to use from the selected provider.">
+          <ConditionalTooltip content="Select the specific model to use from the selected provider.">
             <select
               value={selectedModel}
               onChange={(e) => onModelChange(e.target.value)}
@@ -234,7 +245,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
                 </>
               )}
             </select>
-          </Tooltip>
+          </ConditionalTooltip>
         </div>
       )}
 
@@ -242,7 +253,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       {needsApiKey && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">API Key</label>
-          <Tooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
+          <ConditionalTooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
             <input
               type="password"
               value={apiKey}
@@ -250,7 +261,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
               placeholder={`Enter ${selectedProviderInfo?.name} API key`}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             />
-          </Tooltip>
+          </ConditionalTooltip>
         </div>
       )}
 
@@ -259,8 +270,8 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
         <div className="space-y-2">
           {isLocalProvider ? (
             <>
-              <label className="text-sm font-medium text-gray-700">Base URL</label>
-              <Tooltip content="The URL where your local LLM server is running.">
+              <label className="text-sm font-medium text-gray-700">Provider URL</label>
+              <ConditionalTooltip content="The URL where your local LLM server is running.">
                 <input
                   type="text"
                   value={baseUrl || (selectedProvider === 'ollama' ? 'http://localhost:11434' : '')}
@@ -268,7 +279,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
                   placeholder={selectedProvider === 'ollama' ? 'http://localhost:11434' : 'http://localhost:port'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
-              </Tooltip>
+              </ConditionalTooltip>
               {selectedProvider === 'ollama' && (
                 <p className="text-xs text-gray-500">
                   Default Ollama installation runs on http://localhost:11434
@@ -278,7 +289,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
           ) : (
             <>
               <label className="text-sm font-medium text-gray-700">API Key</label>
-              <Tooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
+              <ConditionalTooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
                 <input
                   type="password"
                   value={apiKey}
@@ -286,7 +297,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
                   placeholder={`Enter ${selectedProviderInfo?.name} API key`}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
-              </Tooltip>
+              </ConditionalTooltip>
             </>
           )}
         </div>
@@ -305,53 +316,53 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       {/* Model Parameters */}
       {selectedModel && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-gray-600">Model Parameters</h4>
+          <CollapsibleGroup title="Parameters" defaultExpanded={false}>
+            <div className="flex flex-col space-y-4">
+              <ConditionalTooltip content="Controls randomness in responses. Lower values make output more focused and deterministic.">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-sm font-medium text-gray-700">Temperature</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={modelConfig.temperature || 0.7}
+                    onChange={(e) => onConfigChange({ ...modelConfig, temperature: parseFloat(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </ConditionalTooltip>
 
-          <div className="space-y-2">
-            <Tooltip content="Controls randomness in responses. Lower values make output more focused and deterministic.">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-gray-700">Temperature</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={modelConfig.temperature || 0.7}
-                  onChange={(e) => onConfigChange({ ...modelConfig, temperature: parseFloat(e.target.value) })}
-                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </Tooltip>
+              <ConditionalTooltip content="Maximum number of tokens to generate in the response.">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-sm font-medium text-gray-700">Max Tokens</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="200000"
+                    value={modelConfig.maxTokens || 150}
+                    onChange={(e) => onConfigChange({ ...modelConfig, maxTokens: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </ConditionalTooltip>
 
-            <Tooltip content="Maximum number of tokens to generate in the response.">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-gray-700">Max Tokens</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="200000"
-                  value={modelConfig.maxTokens || 150}
-                  onChange={(e) => onConfigChange({ ...modelConfig, maxTokens: parseInt(e.target.value) })}
-                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </Tooltip>
-
-            <Tooltip content="Nucleus sampling parameter. Controls diversity by considering only the top-p probability mass.">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-gray-700">Top P</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={modelConfig.topP || 0.8}
-                  onChange={(e) => onConfigChange({ ...modelConfig, topP: parseFloat(e.target.value) })}
-                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </Tooltip>
-          </div>
+              <ConditionalTooltip content="Nucleus sampling parameter. Controls diversity by considering only the top-p probability mass.">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-sm font-medium text-gray-700">Top P</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={modelConfig.topP || 0.8}
+                    onChange={(e) => onConfigChange({ ...modelConfig, topP: parseFloat(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </ConditionalTooltip>
+            </div>
+          </CollapsibleGroup>
         </div>
       )}
     </div>

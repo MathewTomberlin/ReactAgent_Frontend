@@ -8,10 +8,10 @@ import { SettingsProvider } from "./context/SettingsContext";
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppProvider>
-      <SettingsProvider>
+    <SettingsProvider>
+      <AppProvider>
         <App />
-      </SettingsProvider>
-    </AppProvider>
+      </AppProvider>
+    </SettingsProvider>
   </StrictMode>,
 )

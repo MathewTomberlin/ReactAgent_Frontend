@@ -2,19 +2,36 @@ import axios, { AxiosError } from "axios";
 
 // Function to get the correct API base URL
 const getApiBaseUrl = (): string => {
-  // If environment variable is set, use it
+  // If environment variable is set, check if it's valid for current context
   if (import.meta.env.VITE_API_BASE) {
-    return import.meta.env.VITE_API_BASE;
+    const envUrl = import.meta.env.VITE_API_BASE;
+    console.log('🔗 API Base URL: Environment variable set to:', envUrl);
+
+    // If we're accessing from a different hostname than localhost/127.0.0.1,
+    // and the env URL contains localhost, we need to make it dynamic
+    if ((window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') &&
+        (envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+      console.log('🔗 API Base URL: Detected network access with localhost in env, using dynamic IP');
+      const dynamicUrl = `http://${window.location.hostname}:8080`;
+      console.log('🔗 API Base URL: Dynamic URL:', dynamicUrl);
+      return dynamicUrl;
+    }
+
+    // Otherwise, use the environment variable as-is
+    return envUrl;
   }
-  
+
   // If running on localhost (development), use localhost
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.log('🔗 API Base URL: Using localhost (development mode)');
     return "http://localhost:8080";
   }
-  
+
   // If accessed from mobile/other device, use the same hostname as the frontend
   // but with port 8080 for the backend
-  return `http://${window.location.hostname}:8080`;
+  const apiUrl = `http://${window.location.hostname}:8080`;
+  console.log('🔗 API Base URL:', apiUrl, '(network mode from hostname:', window.location.hostname + ')');
+  return apiUrl;
 };
 
 const BASE_URL = getApiBaseUrl();
@@ -57,6 +74,7 @@ export interface MessageRequest {
   memoryChunks?: string[];
   disableLongMemoryRecall?: boolean;
   disableAllMemoryRecall?: boolean;
+  systemPrompt?: string;
 }
 
 export interface ApiError {
@@ -154,6 +172,7 @@ export const streamChat = (
     memoryToken?: string;
     disableLongMemoryRecall?: boolean;
     disableAllMemoryRecall?: boolean;
+    systemPrompt?: string;
   },
   onEvent: (evt: { type: 'agent' | 'answer' | 'error'; data: any }) => void
 ) => {
@@ -164,6 +183,7 @@ export const streamChat = (
   if (params.memoryToken) url.searchParams.set('memoryToken', params.memoryToken);
   if (params.disableLongMemoryRecall) url.searchParams.set('disableLongMemoryRecall', 'true');
   if (params.disableAllMemoryRecall) url.searchParams.set('disableAllMemoryRecall', 'true');
+  if (params.systemPrompt) url.searchParams.set('systemPrompt', params.systemPrompt);
 
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());

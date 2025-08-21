@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useSettings } from './SettingsContext';
 import type { ReactNode } from 'react';
 import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, type ModelStatus } from '../api/FastAPIClient';
 
@@ -73,6 +74,7 @@ const AppContext = createContext<AppState>({
 });
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const { settings } = useSettings();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
@@ -240,7 +242,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setLastUserMessage(text);
   };
 
-  const sendToAgent = async (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
+  const sendToAgent = async (text: string, options?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
     // Prevent sending if model is currently loading/unloading
     if (isModelLoading || isModelUnloading || isProviderBusy) {
       console.log('Cannot send message: Model is currently loading/unloading');
@@ -273,7 +275,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const memKey = `mem:${sessionId}`;
       const raw = localStorage.getItem(memKey);
       let memory: { token?: string; chunks?: string[] } | undefined;
-      if (raw && !(settings?.disableAllMemoryRecall)) {
+      if (raw && !(options?.disableAllMemoryRecall)) {
         try {
           memory = JSON.parse(raw);
         } catch {}
@@ -282,8 +284,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const close = streamChat({
         message: text,
         memoryToken: memory?.token,
-        disableLongMemoryRecall: settings?.disableLongMemoryRecall,
-        disableAllMemoryRecall: settings?.disableAllMemoryRecall
+        disableLongMemoryRecall: options?.disableLongMemoryRecall,
+        disableAllMemoryRecall: options?.disableAllMemoryRecall,
+        systemPrompt: (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt : undefined
       }, (evt) => {
         if (evt.type === 'agent') {
           const statusText = evt.data?.message || 'Processing...';
@@ -402,8 +405,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               sessionId,
               memoryToken: memory?.token,
               memoryChunks: memory?.chunks,
-              disableLongMemoryRecall: settings?.disableLongMemoryRecall,
-              disableAllMemoryRecall: settings?.disableAllMemoryRecall
+              disableLongMemoryRecall: options?.disableLongMemoryRecall,
+              disableAllMemoryRecall: options?.disableAllMemoryRecall,
+              systemPrompt: (settings.systemPrompt && settings.systemPrompt.trim().length > 0) ? settings.systemPrompt : undefined
             });
             const agentMessage: Message = {
               sender: 'agent',

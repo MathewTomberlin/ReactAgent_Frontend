@@ -20,7 +20,10 @@ export const CollapsibleGroup = ({
     <div className={`mb-4 ${className}`}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-t hover:bg-gray-100 transition-colors"
+        className={`w-full flex items-center justify-between p-2 text-sm font-medium text-gray-700 rounded-t hover:bg-gray-300 transition-colors ${
+          className.includes('collapsible-group-top') ? 'bg-gray-200' :
+          className.includes('collapsible-group-nested') ? 'bg-gray-300' : 'bg-gray-200'
+        }`}
       >
         <span>{title}</span>
         <svg
@@ -33,7 +36,10 @@ export const CollapsibleGroup = ({
         </svg>
       </button>
       {isExpanded && (
-        <div className="p-3 bg-white border border-gray-200 rounded-b">
+        <div className={`p-3 border border-gray-200 rounded-b ${
+          className.includes('collapsible-group-top') ? 'bg-gray-100' :
+          className.includes('collapsible-group-nested') ? 'bg-gray-200' : 'bg-gray-100'
+        }`}>
           {children}
         </div>
       )}
