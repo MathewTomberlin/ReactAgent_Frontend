@@ -12,7 +12,7 @@ export const initializeMobileViewport = () => {
   const setKeyboardVisible = (visible: boolean) => {
     if (visible !== isKeyboardVisible) {
       isKeyboardVisible = visible;
-      
+
       if (visible) {
         // Add keyboard visible class
         document.body.classList.add('keyboard-visible');
@@ -37,16 +37,25 @@ export const initializeMobileViewport = () => {
   const handleInputBlur = (event: FocusEvent) => {
     const target = event.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      // Use a longer delay to avoid conflicts with textarea focus restoration
       setTimeout(() => {
         const activeElement = document.activeElement;
+        // Only hide keyboard if we're definitely not focused on any input/textarea
+        // and the target is still not focused (meaning focus restoration didn't occur)
         if (!activeElement || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA')) {
-          setKeyboardVisible(false);
+          // Double-check after another brief delay to account for focus restoration
+          setTimeout(() => {
+            const currentActive = document.activeElement;
+            if (!currentActive || (currentActive.tagName !== 'INPUT' && currentActive.tagName !== 'TEXTAREA')) {
+              setKeyboardVisible(false);
+            }
+          }, 50);
         }
-      }, 100);
+      }, 150); // Increased from 100ms to 150ms to account for focus restoration
     }
   };
 
-  // Add focus/blur event listeners
+  // Add focus/blur event listeners (do not use passive=false that might block browser behavior)
   document.addEventListener('focusin', handleInputFocus, true);
   document.addEventListener('focusout', handleInputBlur, true);
 

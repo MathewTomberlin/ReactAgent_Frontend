@@ -1,16 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Tooltip } from './Tooltip';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ConditionalTooltip } from '../utils/uiUtils';
 import { CollapsibleGroup } from './CollapsibleGroup';
-
-// Utility function to detect mobile devices
-const isMobile = () => {
-  return window.innerWidth <= 768;
-};
-
-// Conditional Tooltip component that only shows on desktop
-const ConditionalTooltip: React.FC<{ content: string | React.ReactNode; children: React.ReactNode; position?: "top" | "bottom" | "left" | "right" }> = ({ content, children, position }) => {
-  return isMobile() ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
-};
 import {
   getProviders,
   getProviderModels,
@@ -38,7 +28,7 @@ interface ModelSelectionProps {
   onConfigChange: (config: ModelConfig) => void;
 }
 
-export const ModelSelection: React.FC<ModelSelectionProps> = ({
+export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
   selectedProvider,
   selectedModel,
   apiKey,
@@ -78,10 +68,15 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
     loadProviders();
   }, []);
 
-  // Calculate provider info - moved before useEffect to avoid initialization issues
-  const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
-  const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
-  const needsApiKey: boolean = !!(selectedProvider && !isLocalProvider && selectedProvider !== 'gemini');
+  // Calculate provider info - memoized to prevent recalculation on every render
+  const providerInfo = useMemo(() => {
+    const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
+    const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
+    const needsApiKey: boolean = !!(selectedProvider && !isLocalProvider && selectedProvider !== 'gemini');
+    return { selectedProviderInfo, isLocalProvider, needsApiKey };
+  }, [providers, selectedProvider]);
+
+  const { selectedProviderInfo, isLocalProvider, needsApiKey } = providerInfo;
 
   // Update models when provider changes or API key is provided
   useEffect(() => {
@@ -256,10 +251,21 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
 
   // Auto-save when configuration changes
   useEffect(() => {
-    if (selectedProvider && selectedModel) {
-      const timeoutId = setTimeout(saveConfig, 1000); // Debounce for 1 second
-      return () => clearTimeout(timeoutId);
-    }
+    if (!selectedProvider || !selectedModel) return;
+
+    const scheduleSave = () => {
+      // Avoid autosave while the user is actively focusing an input/textarea (prevents mobile blur)
+      const active = typeof document !== 'undefined' ? document.activeElement as HTMLElement | null : null;
+      const isFormField = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+      if (isFormField) {
+        // Try again later after the user leaves the field
+        return;
+      }
+      void saveConfig();
+    };
+
+    const timeoutId = window.setTimeout(scheduleSave, 1000); // Debounce for 1 second
+    return () => window.clearTimeout(timeoutId);
   }, [selectedProvider, selectedModel, apiKey, baseUrl, modelConfig]);
 
   // Immediately set current provider/model on selection change to avoid race with debounced save
@@ -444,4 +450,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = ({
       )}
     </div>
   );
-};
+});
+
+ModelSelection.displayName = 'ModelSelection';

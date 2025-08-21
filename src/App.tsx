@@ -7,7 +7,12 @@ import { RagUploader } from './components/RagUploader'
 import { MemoryManagement } from './components/MemoryManagement'
 import { Tooltip } from './components/Tooltip'
 import { ModelSelection } from './components/ModelSelection'
+import { PromptTextarea } from './components/PromptTextarea'
+import { ChatSystemPrompts } from './components/ChatSystemPrompts'
+import { ConditionalTooltip } from './utils/uiUtils'
 import { initializeMobileViewport } from './utils/mobileViewport'
+
+
 import './App.css'
 
 function App() {
@@ -29,22 +34,16 @@ function App() {
     isProviderBusy
   } = useAppContext();
   
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, updateTextSettings, updateTextSettingsImmediate } = useSettings();
 
-  // Utility function to detect mobile devices
-  const isMobile = () => {
-    return window.innerWidth <= 768;
-  };
 
-  // Conditional Tooltip component that only shows on desktop
-  const ConditionalTooltip: React.FC<{ content: string | React.ReactNode; children: React.ReactNode; position?: "top" | "bottom" | "left" | "right" }> = ({ content, children, position }) => {
-    return isMobile() ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
-  };
 
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // Keyboard visibility is inferred via CSS classes; no React state needed
+
+  // Removed unused refs after PromptTextarea introduction
 
   // Model selection state - initialize from localStorage
   const [selectedProvider, setSelectedProvider] = useState(() => localStorage.getItem('currentProviderId') || 'gemini');
@@ -76,6 +75,8 @@ function App() {
     return cleanup;
   }, []);
 
+
+
   // Sync provider/model selection with localStorage
   useEffect(() => {
     localStorage.setItem('currentProviderId', selectedProvider);
@@ -85,28 +86,28 @@ function App() {
     localStorage.setItem('currentModelId', selectedModel);
   }, [selectedModel]);
 
-  useEffect(()=>{
-    const checkKeyboardState = () => {
-      const isVisible = document.body.classList.contains('keyboard-visible');
-      if(isVisible !== keyboardVisible){
-        setKeyboardVisible(isVisible);
-      }
-    };
+  // No-op: mobileViewport sets body/html classes to reflect keyboard visibility
 
-    const interval = setInterval(checkKeyboardState, 100);
-    return () => clearInterval(interval);
-  }, [keyboardVisible]);
-
+  const isSubmittingRef = useRef<boolean>(false);
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     if (input.trim() !== "" && !isRateLimited && !isLoading && !isModelLoading && !isModelUnloading && !isProviderBusy) {
-      await sendToAgent(input, settings);
-      setInput('');
+      try {
+        isSubmittingRef.current = true;
+        await sendToAgent(input, settings);
+        setInput('');
+      } finally {
+        // small delay to swallow double taps
+        setTimeout(() => { isSubmittingRef.current = false; }, 150);
+      }
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (isSubmittingRef.current) { e.preventDefault(); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      e.stopPropagation();
       handleSubmit();
     }
   };
@@ -118,6 +119,16 @@ function App() {
   const toggleMobileMenu = () => {
     setShowMobileMenu(!showMobileMenu);
   };
+
+  // Lock body scroll when mobile menu is open to avoid background layout shifts affecting focus
+  useEffect(() => {
+    if (showMobileMenu) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => document.body.classList.remove('overflow-hidden');
+  }, [showMobileMenu]);
 
   const formatTimestamp = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -171,31 +182,12 @@ function App() {
                 <div className="space-y-4">
                   {/* System Sub-group */}
                   <CollapsibleGroup title="System" defaultExpanded={false} className="collapsible-group-nested">
-                    <div className="flex flex-col space-y-3">
-                      <Tooltip content="Global instructions that guide the assistant's behavior across all responses.">
-                        <div>
-                          <label className="text-sm text-gray-700 cursor-pointer block mb-1">System Prompt</label>
-                          <textarea
-                            value={settings.systemPrompt}
-                            onChange={(e) => updateSettings({ systemPrompt: e.target.value })}
-                            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
-                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </Tooltip>
-                      <Tooltip content="A character or persona layer applied after the system prompt. Leave blank for none.">
-                        <div>
-                          <label className="text-sm text-gray-700 cursor-pointer block mb-1">Character Prompt</label>
-                          <textarea
-                            value={settings.characterPrompt || ''}
-                            onChange={(e) => updateSettings({ characterPrompt: e.target.value })}
-                            placeholder="You are a wise and intelligent software engineer and code reviewer."
-                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <div className="text-xs text-gray-500 mt-1">If set, it is appended after the System Prompt.</div>
-                        </div>
-                      </Tooltip>
-                    </div>
+                    <ChatSystemPrompts
+                      systemPrompt={settings.systemPrompt}
+                      characterPrompt={settings.characterPrompt || ''}
+                      onDebouncedChange={(u) => updateTextSettings(u)}
+                      onImmediateCommit={(u) => updateTextSettingsImmediate(u)}
+                    />
                   </CollapsibleGroup>
                   {/* Controls Sub-group */}
                   <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
@@ -380,7 +372,7 @@ function App() {
 
         {/* Mobile Menu */}
         {showMobileMenu && (
-          <div className="md:hidden bg-white border-b border-gray-200 mobile-menu h-full flex flex-col">
+          <div className="md:hidden fixed inset-0 z-50 bg-white mobile-menu flex flex-col overflow-y-auto">
             <div className="flex items-center justify-between py-2 px-4 flex-shrink-0">
               <h3 className="text-lg font-bold text-gray-800">Settings</h3>
               <button
@@ -396,29 +388,28 @@ function App() {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto">
               <div className="p-4 pb-8 space-y-4">
+                {/* Mobile-only prompts were here for isolation; now reverted to render within collapsible group */}
                 {/* Chat */}
                 <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
                   <div className="space-y-4">
-                    {/* System Sub-group (mobile) */}
+                    {/* System Sub-group */}
                     <CollapsibleGroup title="System" defaultExpanded={false} className="collapsible-group-nested">
                       <div className="flex flex-col space-y-3">
                         <ConditionalTooltip content="Global instructions that guide the assistant's behavior across all responses.">
-                          <div>
-                            <label className="text-sm text-gray-700 cursor-pointer block mb-1">System Prompt</label>
-                            <textarea
-                              value={settings.systemPrompt}
-                              onChange={(e) => updateSettings({ systemPrompt: e.target.value })}
-                              placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
-                              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
+                          <PromptTextarea
+                            label="System Prompt"
+                            value={settings.systemPrompt}
+                            onChangeDebounced={(next) => updateTextSettings({ systemPrompt: next })}
+                            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
+                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
                         </ConditionalTooltip>
                         <ConditionalTooltip content="A character or persona layer applied after the system prompt. Leave blank for none.">
                           <div>
-                            <label className="text-sm text-gray-700 cursor-pointer block mb-1">Character Prompt</label>
-                            <textarea
+                            <PromptTextarea
+                              label="Character Prompt"
                               value={settings.characterPrompt || ''}
-                              onChange={(e) => updateSettings({ characterPrompt: e.target.value })}
+                              onChangeDebounced={(next) => updateTextSettings({ characterPrompt: next })}
                               placeholder="You are a wise and intelligent software engineer and code reviewer."
                               className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
@@ -700,6 +691,7 @@ function App() {
               onClick={handleSubmit}
               disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === ""}
               className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
+              type="button"
               title="Send message"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

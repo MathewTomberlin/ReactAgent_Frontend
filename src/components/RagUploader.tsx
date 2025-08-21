@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { uploadPdf, clearRag } from '../api/RagClient';
 import { useSettings } from '../context/SettingsContext';
 import { Tooltip } from './Tooltip';
@@ -14,7 +14,7 @@ type FileState = {
   error?: string;
 };
 
-export const RagUploader = ({ sessionId }: { sessionId?: string }) => {
+export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<FileState[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -89,11 +89,11 @@ export const RagUploader = ({ sessionId }: { sessionId?: string }) => {
     }
   };
 
-  const humanSize = (bytes: number) => {
+  const humanSize = useCallback((bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -180,6 +180,8 @@ export const RagUploader = ({ sessionId }: { sessionId?: string }) => {
       )}
     </div>
   );
-};
+});
+
+RagUploader.displayName = 'RagUploader';
 
 

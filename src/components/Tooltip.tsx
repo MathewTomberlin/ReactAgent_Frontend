@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 
 interface TooltipProps {
   content: string | React.ReactNode;
@@ -7,12 +7,21 @@ interface TooltipProps {
   className?: string;
 }
 
-export const Tooltip: React.FC<TooltipProps> = ({
+export const Tooltip: React.FC<TooltipProps> = React.memo(({
   content,
   children,
   position = 'top',
   className = '',
 }) => {
+  // Memoize mobile check to prevent unnecessary re-renders
+  const isMobileDevice = useMemo(() => {
+    return typeof window !== 'undefined' && window.innerWidth <= 768;
+  }, []);
+
+  // On mobile, avoid wrapping elements to prevent focus issues
+  if (isMobileDevice) {
+    return <>{children}</>;
+  }
   const [isVisible, setIsVisible] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLElement>(null);
@@ -143,4 +152,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
       )}
     </div>
   );
-};
+});
+
+Tooltip.displayName = 'Tooltip';

@@ -1,25 +1,15 @@
 import React, { useState } from 'react';
 import { exportSessionMemory, importSessionMemory, clearLongTermMemoryEndpoint, clearAllMemoryEndpoint, type SessionMemory } from '../api/FastAPIClient';
 import { useSettings } from '../context/SettingsContext';
-import { Tooltip } from './Tooltip';
+import { ConditionalTooltip } from '../utils/uiUtils';
 import { CollapsibleGroup } from './CollapsibleGroup';
-
-// Utility function to detect mobile devices
-const isMobile = () => {
-  return window.innerWidth <= 768;
-};
-
-// Conditional Tooltip component that only shows on desktop
-const ConditionalTooltip: React.FC<{ content: string | React.ReactNode; children: React.ReactNode; position?: "top" | "bottom" | "left" | "right" }> = ({ content, children, position }) => {
-  return isMobile() ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
-};
 
 interface MemoryManagementProps {
   sessionId: string;
   onMemoryImport: (memoryToken?: string, memoryChunks?: string[]) => void;
 }
 
-export const MemoryManagement: React.FC<MemoryManagementProps> = ({
+export const MemoryManagement: React.FC<MemoryManagementProps> = React.memo(({
   sessionId,
   onMemoryImport,
 }) => {
@@ -267,4 +257,6 @@ export const MemoryManagement: React.FC<MemoryManagementProps> = ({
 
     </div>
   );
-};
+});
+
+MemoryManagement.displayName = 'MemoryManagement';

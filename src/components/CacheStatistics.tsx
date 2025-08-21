@@ -8,7 +8,7 @@ interface CacheStatisticsProps {
   cacheStats: CacheStats | null;
 }
 
-export const CacheStatistics = ({ cacheStats }: CacheStatisticsProps) => {
+export const CacheStatistics = React.memo(({ cacheStats }: CacheStatisticsProps) => {
   if (!cacheStats) {
     return (
       <div className="text-xs text-gray-600">
@@ -33,4 +33,6 @@ export const CacheStatistics = ({ cacheStats }: CacheStatisticsProps) => {
       </div>
     </div>
   );
-};
+});
+
+CacheStatistics.displayName = 'CacheStatistics';

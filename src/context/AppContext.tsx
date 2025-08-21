@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useSettings } from './SettingsContext';
 import type { ReactNode } from 'react';
 import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
@@ -335,7 +335,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setLastUserMessage(text);
   };
 
+  const sendingRef = useRef<boolean>(false);
   const sendToAgent = async (text: string, options?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
+    if (sendingRef.current) {
+      return; // guard against double send due to rapid events
+    }
     // Prevent sending if model is currently loading/unloading
     if (isModelLoading || isModelUnloading || isProviderBusy) {
       console.log('Cannot send message: Model is currently loading/unloading');
@@ -356,6 +360,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     addUserMessage(text);
     setIsLoading(true);
+    sendingRef.current = true;
 
     try {
       // Prefer SSE for realtime agent status; fallback to REST on error
@@ -453,6 +458,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
           setConnectionStatus('online');
           setIsLoading(false);
+          sendingRef.current = false;
           if (!resp.cached) {
             startRateLimitCooldown();
           }
@@ -493,6 +499,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             setMessages(prev => prev.length ? [...prev.slice(0, -1), errorMsg] : [errorMsg]);
           }
           setIsLoading(false);
+          sendingRef.current = false;
         }
       });
 

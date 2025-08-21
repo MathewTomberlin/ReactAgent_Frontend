@@ -228,3 +228,22 @@ textarea:focus-visible {
     color: #ffffff;
   }
 }
+
+/* Mobile textarea improvements - basic fallback */
+@media (max-width: 768px) {
+  /* Basic mobile textarea styles */
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Improve scroll handling in mobile settings when keyboard opens */
+  .mobile-menu {
+    height: 100dvh;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-menu .collapsible-group-top > div,
+  .mobile-menu .collapsible-group-nested > div {
+    will-change: transform;
+  }
+}
