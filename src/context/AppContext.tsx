@@ -391,7 +391,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (sys) return sys;
           if (ch) return ch; // if only character prompt is set, still pass as system to keep ordering first
           return undefined;
-        })()
+        })(),
+        unloadAfterCall: settings.unloadAfterCall
       }, (evt) => {
         if (evt.type === 'agent') {
           const statusText = evt.data?.message || 'Processing...';

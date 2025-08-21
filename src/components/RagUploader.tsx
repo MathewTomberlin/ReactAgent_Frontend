@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { uploadPdf, clearRag } from '../api/RagClient';
 import { useSettings } from '../context/SettingsContext';
 import { Tooltip } from './Tooltip';

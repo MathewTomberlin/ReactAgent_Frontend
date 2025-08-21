@@ -293,6 +293,28 @@ function App() {
                   onBaseUrlChange={setBaseUrl}
                   onConfigChange={setModelConfig}
                 />
+                
+                {/* Settings Sub-group - only show for Ollama */}
+                {selectedProvider === 'ollama' && (
+                  <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex flex-col space-y-3">
+                      <Tooltip content="When enabled, the model will be unloaded from memory after each call to free up system resources. When disabled, the model stays loaded for faster subsequent calls.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="unloadAfterCall"
+                            checked={settings.unloadAfterCall}
+                            onChange={() => updateSettings({ unloadAfterCall: !settings.unloadAfterCall })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="unloadAfterCall" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Unload After Call
+                          </label>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
+                )}
               </CollapsibleGroup>
 
               {/* Knowledge - PDF Upload */}
@@ -518,6 +540,28 @@ function App() {
                     onBaseUrlChange={setBaseUrl}
                     onConfigChange={setModelConfig}
                   />
+                  
+                  {/* Settings Sub-group - only show for Ollama */}
+                  {selectedProvider === 'ollama' && (
+                    <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex flex-col space-y-3">
+                        <ConditionalTooltip content="When enabled, the model will be unloaded from memory after each call to free up system resources. When disabled, the model stays loaded for faster subsequent calls.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="unloadAfterCall-mobile"
+                              checked={settings.unloadAfterCall}
+                              onChange={() => updateSettings({ unloadAfterCall: !settings.unloadAfterCall })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="unloadAfterCall-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Unload After Call
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+                      </div>
+                    </CollapsibleGroup>
+                  )}
                 </CollapsibleGroup>
 
                 {/* Knowledge - PDF Upload (mobile) */}

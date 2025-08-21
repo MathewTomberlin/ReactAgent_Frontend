@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface CacheStats {
   hits: number;
   misses: number;

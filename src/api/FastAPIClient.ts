@@ -164,6 +164,7 @@ export const streamChat = (
     disableLongMemoryRecall?: boolean;
     disableAllMemoryRecall?: boolean;
     systemPrompt?: string;
+    unloadAfterCall?: boolean;
   },
   onEvent: (evt: { type: 'agent' | 'answer' | 'error'; data: any }) => void
 ) => {
@@ -175,6 +176,7 @@ export const streamChat = (
   if (params.disableLongMemoryRecall) url.searchParams.set('disableLongMemoryRecall', 'true');
   if (params.disableAllMemoryRecall) url.searchParams.set('disableAllMemoryRecall', 'true');
   if (params.systemPrompt) url.searchParams.set('systemPrompt', params.systemPrompt);
+  if (typeof params.unloadAfterCall === 'boolean') url.searchParams.set('unloadAfterCall', String(params.unloadAfterCall));
 
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());

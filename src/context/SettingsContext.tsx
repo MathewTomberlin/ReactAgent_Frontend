@@ -10,6 +10,7 @@ interface ChatSettings {
   disableAllMemoryRecall: boolean;
   systemPrompt: string;
   characterPrompt: string;
+  unloadAfterCall: boolean;
 }
 
 interface SettingsContextType {
@@ -30,6 +31,7 @@ const defaultSettings: ChatSettings = {
   disableAllMemoryRecall: false,
   systemPrompt: '',
   characterPrompt: '',
+  unloadAfterCall: true,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -76,22 +78,8 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
 
-  // Debounced update for text inputs to prevent excessive re-renders
+  // Debounced update for text inputs - simplified to reduce conflicts with component-level debouncing
   const updateTextSettings = useCallback((newSettings: Partial<ChatSettings>) => {
-    // Store the currently focused element and cursor position to restore after update
-    const activeElement = document.activeElement as HTMLElement;
-    let cursorPosition = { start: 0, end: 0 };
-    
-    if (activeElement && (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT')) {
-      try {
-        const inputElement = activeElement as HTMLInputElement | HTMLTextAreaElement;
-        cursorPosition = {
-          start: inputElement.selectionStart || 0,
-          end: inputElement.selectionEnd || 0
-        };
-      } catch {}
-    }
-
     // Merge with any pending updates
     pendingTextUpdatesRef.current = { ...pendingTextUpdatesRef.current, ...newSettings };
 
@@ -100,27 +88,12 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    // Set new timeout to apply updates
+    // Set new timeout to apply updates - longer timeout to let component handle its own debouncing
     debounceTimeoutRef.current = setTimeout(() => {
       setSettings(prev => ({ ...prev, ...pendingTextUpdatesRef.current }));
       pendingTextUpdatesRef.current = {};
-
-      // Restore focus and cursor position to the previously focused element
-      if (activeElement && (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT') && activeElement.isConnected) {
-        setTimeout(() => {
-          activeElement.focus();
-          // Restore cursor position if it's a textarea
-          if (activeElement.tagName === 'TEXTAREA') {
-            const textarea = activeElement as HTMLTextAreaElement;
-            try { 
-              textarea.setSelectionRange(cursorPosition.start, cursorPosition.end);
-            } catch {}
-          }
-        }, 0);
-      }
-
       debounceTimeoutRef.current = null;
-    }, 300); // Increased to 300ms to match PromptTextarea debounce
+    }, 600); // Increased to 600ms to avoid conflicts with PromptTextarea's 500ms debounce
   }, []);
 
   // Immediate update for text inputs, cancels any pending debounce and merges pending values
