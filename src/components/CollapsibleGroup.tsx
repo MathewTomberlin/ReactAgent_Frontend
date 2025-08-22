@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 interface CollapsibleGroupProps {
@@ -8,19 +8,34 @@ interface CollapsibleGroupProps {
   className?: string;
 }
 
-export const CollapsibleGroup = ({ 
-  title, 
-  children, 
+export const CollapsibleGroup = ({
+  title,
+  children,
   defaultExpanded = true,
   className = ""
 }: CollapsibleGroupProps) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // Prevent focus stealing when clicking header by avoiding immediate reflow
+  const toggle = () => {
+    // Defer state change to end of event loop to avoid interfering with focused inputs
+    setTimeout(() => setIsExpanded(prev => !prev), 0);
+  };
+
+  const contentBgClass = useMemo(() => (
+    className.includes('collapsible-group-top') ? 'bg-gray-100' :
+    className.includes('collapsible-group-nested') ? 'bg-gray-200' : 'bg-gray-100'
+  ), [className]);
+
+  const headerBgClass = useMemo(() => (
+    className.includes('collapsible-group-top') ? 'bg-gray-200' :
+    className.includes('collapsible-group-nested') ? 'bg-gray-300' : 'bg-gray-200'
+  ), [className]);
 
   return (
     <div className={`mb-4 ${className}`}>
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-t hover:bg-gray-100 transition-colors"
+        onClick={toggle}
+        className={`w-full flex items-center justify-between p-2 text-sm font-medium text-gray-700 rounded-t hover:bg-gray-300 transition-colors ${headerBgClass}`}
       >
         <span>{title}</span>
         <svg
@@ -32,11 +47,13 @@ export const CollapsibleGroup = ({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      {isExpanded && (
-        <div className="p-3 bg-white border border-gray-200 rounded-b">
-          {children}
-        </div>
-      )}
+      <div
+        className={`p-3 border border-gray-200 rounded-b ${contentBgClass}`}
+        style={{ display: isExpanded ? 'block' : 'none', contain: 'content' }}
+        aria-hidden={!isExpanded}
+      >
+        {children}
+      </div>
     </div>
   );
 };

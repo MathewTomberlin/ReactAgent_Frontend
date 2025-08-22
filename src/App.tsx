@@ -2,31 +2,55 @@ import { useState, useRef, useEffect } from 'react'
 import { useAppContext } from './context/AppContext'
 import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
-import { ChatSettings } from './components/ChatSettings'
-import { CacheStatistics } from './components/CacheStatistics'
+import { RagUploader } from './components/RagUploader'
+
+import { MemoryManagement } from './components/MemoryManagement'
+import { Tooltip } from './components/Tooltip'
+import { ModelSelection } from './components/ModelSelection'
+import { PromptTextarea } from './components/PromptTextarea'
+import { ChatSystemPrompts } from './components/ChatSystemPrompts'
+import { ConditionalTooltip } from './utils/uiUtils'
 import { initializeMobileViewport } from './utils/mobileViewport'
+
+
 import './App.css'
 
 function App() {
-  const { 
-    messages, 
-    sendToAgent, 
-    isLoading, 
-    isRateLimited, 
-    rateLimitCooldown, 
+  const {
+    messages,
+    sendToAgent,
+    isLoading,
+    isRateLimited,
+    rateLimitCooldown,
+    isModelBusy,
+    modelBusyText,
     connectionStatus,
-    cacheStats,
-    isAdmin,
+    sessionId,
+    importMemory,
     clearMessages,
-    retryLastMessage
+    retryLastMessage,
+    isModelLoading,
+    isModelUnloading,
+    isProviderBusy
   } = useAppContext();
   
-  const { settings, updateSettings } = useSettings();
-  
+  const { settings, updateSettings, updateTextSettings, updateTextSettingsImmediate } = useSettings();
+
+
+
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // Keyboard visibility is inferred via CSS classes; no React state needed
+
+  // Removed unused refs after PromptTextarea introduction
+
+  // Model selection state - initialize from localStorage
+  const [selectedProvider, setSelectedProvider] = useState(() => localStorage.getItem('currentProviderId') || 'gemini');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('currentModelId') || 'gemini-1.5-flash');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
+  const [modelConfig, setModelConfig] = useState<{ temperature: number; maxTokens: number; topP: number; [key: string]: any }>({ temperature: 0.7, maxTokens: 150, topP: 0.8 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -51,28 +75,39 @@ function App() {
     return cleanup;
   }, []);
 
-  useEffect(()=>{
-    const checkKeyboardState = () => {
-      const isVisible = document.body.classList.contains('keyboard-visible');
-      if(isVisible !== keyboardVisible){
-        setKeyboardVisible(isVisible);
-      }
-    };
 
-    const interval = setInterval(checkKeyboardState, 100);
-    return () => clearInterval(interval);
-  }, [keyboardVisible]);
 
+  // Sync provider/model selection with localStorage
+  useEffect(() => {
+    localStorage.setItem('currentProviderId', selectedProvider);
+  }, [selectedProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('currentModelId', selectedModel);
+  }, [selectedModel]);
+
+  // No-op: mobileViewport sets body/html classes to reflect keyboard visibility
+
+  const isSubmittingRef = useRef<boolean>(false);
   const handleSubmit = async () => {
-    if (input.trim() !== "" && !isRateLimited && !isLoading) {
-      await sendToAgent(input);
-      setInput('');
+    if (isSubmittingRef.current) return;
+    if (input.trim() !== "" && !isRateLimited && !isLoading && !isModelLoading && !isModelUnloading && !isProviderBusy) {
+      try {
+        isSubmittingRef.current = true;
+        await sendToAgent(input, settings);
+        setInput('');
+      } finally {
+        // small delay to swallow double taps
+        setTimeout(() => { isSubmittingRef.current = false; }, 150);
+      }
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (isSubmittingRef.current) { e.preventDefault(); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      e.stopPropagation();
       handleSubmit();
     }
   };
@@ -84,6 +119,16 @@ function App() {
   const toggleMobileMenu = () => {
     setShowMobileMenu(!showMobileMenu);
   };
+
+  // Lock body scroll when mobile menu is open to avoid background layout shifts affecting focus
+  useEffect(() => {
+    if (showMobileMenu) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => document.body.classList.remove('overflow-hidden');
+  }, [showMobileMenu]);
 
   const formatTimestamp = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -111,51 +156,181 @@ function App() {
     <div className="flex h-screen bg-gray-50 overflow-hidden md:relative">
 
       {/* Sidebar - Desktop */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
-        <div className="p-4 w-64">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
-            <button
-              onClick={toggleSidebar}
-              className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
-              title="Close sidebar"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          
-          {/* Chat Controls */}
-          <CollapsibleGroup title="Chat Controls" defaultExpanded={true}>
-            <div className="space-y-2">
+      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
+        <div className="h-full flex flex-col">
+          {/* Header - Fixed */}
+          <div className="flex-shrink-0 p-4 w-72">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
               <button
-                onClick={clearMessages}
-                className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                onClick={toggleSidebar}
+                className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
+                title="Close sidebar"
               >
-                Clear Chat
-              </button>
-              <button
-                onClick={retryLastMessage}
-                disabled={!messages.length || isLoading || isRateLimited}
-                className="w-full px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Retry Last Message
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
-          </CollapsibleGroup>
-          
-          {/* Chat Settings */}
-          <CollapsibleGroup title="Chat Settings" defaultExpanded={true}>
-            <ChatSettings />
-          </CollapsibleGroup>
-          
-          {/* Cache Statistics - Admin Only */}
-          {isAdmin && (
-            <CollapsibleGroup title="Cache Statistics" defaultExpanded={false}>
-              <CacheStatistics cacheStats={cacheStats} />
-            </CollapsibleGroup>
-          )}
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 w-72 space-y-4">
+              {/* Chat */}
+              <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
+                <div className="space-y-4">
+                  {/* System Sub-group */}
+                  <CollapsibleGroup title="System" defaultExpanded={false} className="collapsible-group-nested">
+                    <ChatSystemPrompts
+                      systemPrompt={settings.systemPrompt}
+                      characterPrompt={settings.characterPrompt || ''}
+                      onDebouncedChange={(u) => updateTextSettings(u)}
+                      onImmediateCommit={(u) => updateTextSettingsImmediate(u)}
+                    />
+                  </CollapsibleGroup>
+                  {/* Controls Sub-group */}
+                  <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex justify-center space-x-2">
+                      <Tooltip content="Remove all messages from the chat and start with a clean conversation.">
+                        <button
+                          onClick={clearMessages}
+                          className="px-3 py-2 text-sm bg-red-200 text-gray-700 rounded hover:bg-red-300 transition-colors"
+                        >
+                          Clear Chat
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Regenerate the response for the last user message. Useful if the previous response wasn't satisfactory.">
+                        <button
+                          onClick={() => retryLastMessage(settings)}
+                          disabled={!messages.length || isLoading || isRateLimited}
+                          className="px-3 py-2 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Retry Last Message
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
+
+                  {/* Settings Sub-group */}
+                  <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex flex-col space-y-3">
+                      <Tooltip content="Show which AI model (e.g., Gemini 1.5 Flash) was used to generate each response.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayMessageModel-desktop"
+                            checked={settings.displayMessageModel}
+                            onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayMessageModel-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Message Model
+                          </label>
+                        </div>
+                      </Tooltip>
+
+                      <Tooltip content="Show the number of tokens used in each request and response. Helps understand API usage costs.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayMessageTokens-desktop"
+                            checked={settings.displayMessageTokens}
+                            onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayMessageTokens-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Message Tokens
+                          </label>
+                        </div>
+                      </Tooltip>
+
+                      <Tooltip content="Show timestamps on messages to track when responses were generated.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayTimestamp-desktop"
+                            checked={settings.displayTimestamp}
+                            onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayTimestamp-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Timestamp
+                          </label>
+                        </div>
+                      </Tooltip>
+
+                      <Tooltip content="Show a lightning bolt icon on responses that were served from cache instead of generating a new response.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="displayCachedIndicator-desktop"
+                            checked={settings.displayCachedIndicator}
+                            onChange={() => updateSettings({ displayCachedIndicator: !settings.displayCachedIndicator })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="displayCachedIndicator-desktop" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Display Cached Indicator
+                          </label>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
+                </div>
+              </CollapsibleGroup>
+
+              {/* LLM Selection */}
+              <CollapsibleGroup title="LLM" defaultExpanded={false} className="collapsible-group-top">
+                <ModelSelection
+                  selectedProvider={selectedProvider}
+                  selectedModel={selectedModel}
+                  apiKey={apiKey}
+                  baseUrl={baseUrl}
+                  modelConfig={modelConfig}
+                  onProviderChange={setSelectedProvider}
+                  onModelChange={setSelectedModel}
+                  onApiKeyChange={setApiKey}
+                  onBaseUrlChange={setBaseUrl}
+                  onConfigChange={setModelConfig}
+                />
+                
+                {/* Settings Sub-group - only show for Ollama */}
+                {selectedProvider === 'ollama' && (
+                  <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                    <div className="flex flex-col space-y-3">
+                      <Tooltip content="When enabled, the model will be unloaded from memory after each call to free up system resources. When disabled, the model stays loaded for faster subsequent calls.">
+                        <div className="flex items-start space-x-2">
+                          <input
+                            type="checkbox"
+                            id="unloadAfterCall"
+                            checked={settings.unloadAfterCall}
+                            onChange={() => updateSettings({ unloadAfterCall: !settings.unloadAfterCall })}
+                            className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <label htmlFor="unloadAfterCall" className="text-sm text-gray-700 cursor-pointer flex-1">
+                            Unload After Call
+                          </label>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </CollapsibleGroup>
+                )}
+              </CollapsibleGroup>
+
+              {/* Knowledge - PDF Upload */}
+              <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
+                <RagUploader />
+              </CollapsibleGroup>
+
+              {/* Memory */}
+              <CollapsibleGroup title="Memory" defaultExpanded={false} className="collapsible-group-top">
+                <MemoryManagement
+                  sessionId={sessionId}
+                  onMemoryImport={importMemory}
+                />
+              </CollapsibleGroup>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -193,6 +368,9 @@ function App() {
             {/* Connection Status */}
             <div className={`w-2 h-2 rounded-full ${getConnectionStatusColor()}`}></div>
             <span className="text-sm text-gray-500 hidden sm:inline">{getConnectionStatusText()}</span>
+
+            {/* Memory Size Indicator (if available via metadata updates) */}
+            {/* This assumes AppContext sets a memory size state and exposes it; for brevity, we can wire it here if needed */}
             
             {/* Rate Limit Indicator */}
             {isRateLimited && (
@@ -216,9 +394,9 @@ function App() {
 
         {/* Mobile Menu */}
         {showMobileMenu && (
-          <div className="md:hidden bg-white border-b border-gray-200 p-4 mobile-menu">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-gray-700">Menu</h3>
+          <div className="md:hidden fixed inset-0 z-50 bg-white mobile-menu flex flex-col overflow-y-auto">
+            <div className="flex items-center justify-between py-2 px-4 flex-shrink-0">
+              <h3 className="text-lg font-bold text-gray-800">Settings</h3>
               <button
                 onClick={toggleMobileMenu}
                 className="text-gray-500 hover:text-gray-700"
@@ -228,58 +406,176 @@ function App() {
                 </svg>
               </button>
             </div>
-            
-            {/* Chat Controls */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Controls</h4>
-              <div className="flex">
-                <button
-                  onClick={clearMessages}
-                  className="flex-1 px-3 py-2 text-sm bg-red-200 text-gray-700 rounded active:bg-red-100 "
-                >
-                  Clear Chat
-                </button>
-                <button
-                  onClick={retryLastMessage}
-                  disabled={!messages.length || isLoading || isRateLimited}
-                  className="flex-1 px-3 py-2 text-sm bg-blue-200 text-gray-700 rounded active:bg-blue-100"
-                >
-                  Retry
-                </button>
-              </div>
-            </div>
-            
-            {/* Chat Settings */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-600 mb-2">Chat Settings</h4>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Model</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageModel}
-                    onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 pb-8 space-y-4">
+                {/* Mobile-only prompts were here for isolation; now reverted to render within collapsible group */}
+                {/* Chat */}
+                <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
+                  <div className="space-y-4">
+                    {/* System Sub-group */}
+                    <CollapsibleGroup title="System" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex flex-col space-y-3">
+                        <ConditionalTooltip content="Global instructions that guide the assistant's behavior across all responses.">
+                          <PromptTextarea
+                            label="System Prompt"
+                            value={settings.systemPrompt}
+                            onChangeDebounced={(next) => updateTextSettings({ systemPrompt: next })}
+                            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
+                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </ConditionalTooltip>
+                        <ConditionalTooltip content="A character or persona layer applied after the system prompt. Leave blank for none.">
+                          <div>
+                            <PromptTextarea
+                              label="Character Prompt"
+                              value={settings.characterPrompt || ''}
+                              onChangeDebounced={(next) => updateTextSettings({ characterPrompt: next })}
+                              placeholder="You are a wise and intelligent software engineer and code reviewer."
+                              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">If set, it is appended after the System Prompt.</div>
+                          </div>
+                        </ConditionalTooltip>
+                      </div>
+                    </CollapsibleGroup>
+                    {/* Controls Sub-group */}
+                    <CollapsibleGroup title="Controls" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex justify-center space-x-2">
+                        <button
+                          onClick={clearMessages}
+                          className="px-3 py-2 text-sm bg-red-200 text-gray-700 rounded hover:bg-red-300 transition-colors"
+                        >
+                          Clear Chat
+                        </button>
+                        <button
+                          onClick={() => retryLastMessage(settings)}
+                          disabled={!messages.length || isLoading || isRateLimited}
+                          className="px-3 py-2 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Retry Last Message
+                        </button>
+                      </div>
+                    </CollapsibleGroup>
+
+                    {/* Settings Sub-group */}
+                    <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex flex-col space-y-3">
+                        <ConditionalTooltip content="Show which AI model (e.g., Gemini 1.5 Flash) was used to generate each response.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayMessageModel-mobile"
+                              checked={settings.displayMessageModel}
+                              onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayMessageModel-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Message Model
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show the number of tokens used in each request and response. Helps understand API usage costs.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayMessageTokens-mobile"
+                              checked={settings.displayMessageTokens}
+                              onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayMessageTokens-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Message Tokens
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show timestamps on messages to track when responses were generated.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayTimestamp-mobile"
+                              checked={settings.displayTimestamp}
+                              onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayTimestamp-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Timestamp
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+
+                        <ConditionalTooltip content="Show a lightning bolt icon on responses that were served from cache instead of generating a new response.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="displayCachedIndicator-mobile"
+                              checked={settings.displayCachedIndicator}
+                              onChange={() => updateSettings({ displayCachedIndicator: !settings.displayCachedIndicator })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="displayCachedIndicator-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Display Cached Indicator
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+                      </div>
+                    </CollapsibleGroup>
+                  </div>
+                </CollapsibleGroup>
+
+                {/* LLM Selection */}
+                <CollapsibleGroup title="LLM" defaultExpanded={false} className="collapsible-group-top">
+                  <ModelSelection
+                    selectedProvider={selectedProvider}
+                    selectedModel={selectedModel}
+                    apiKey={apiKey}
+                    baseUrl={baseUrl}
+                    modelConfig={modelConfig}
+                    onProviderChange={setSelectedProvider}
+                    onModelChange={setSelectedModel}
+                    onApiKeyChange={setApiKey}
+                    onBaseUrlChange={setBaseUrl}
+                    onConfigChange={setModelConfig}
                   />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Message Tokens</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayMessageTokens}
-                    onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  
+                  {/* Settings Sub-group - only show for Ollama */}
+                  {selectedProvider === 'ollama' && (
+                    <CollapsibleGroup title="Settings" defaultExpanded={false} className="collapsible-group-nested">
+                      <div className="flex flex-col space-y-3">
+                        <ConditionalTooltip content="When enabled, the model will be unloaded from memory after each call to free up system resources. When disabled, the model stays loaded for faster subsequent calls.">
+                          <div className="flex items-start space-x-2">
+                            <input
+                              type="checkbox"
+                              id="unloadAfterCall-mobile"
+                              checked={settings.unloadAfterCall}
+                              onChange={() => updateSettings({ unloadAfterCall: !settings.unloadAfterCall })}
+                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                            />
+                            <label htmlFor="unloadAfterCall-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
+                              Unload After Call
+                            </label>
+                          </div>
+                        </ConditionalTooltip>
+                      </div>
+                    </CollapsibleGroup>
+                  )}
+                </CollapsibleGroup>
+
+                {/* Knowledge - PDF Upload (mobile) */}
+                <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
+                  <RagUploader />
+                </CollapsibleGroup>
+
+                {/* Memory - Mobile */}
+                <CollapsibleGroup title="Memory" defaultExpanded={false} className="collapsible-group-top">
+                  <MemoryManagement
+                    sessionId={sessionId}
+                    onMemoryImport={importMemory}
                   />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Display Timestamp</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.displayTimestamp}
-                    onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                </div>
+                </CollapsibleGroup>
               </div>
             </div>
           </div>
@@ -299,6 +595,20 @@ function App() {
             </div>
           ) : (
             <>
+              {/* Model Loading/Unloading Indicator */}
+              {(isModelLoading || isModelUnloading || isProviderBusy) && (
+                <div className="flex justify-center mb-4">
+                  <div className="flex items-center space-x-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700"></div>
+                    <span className="text-sm">
+                      {isModelLoading ? `Loading model...` :
+                       isModelUnloading ? `Unloading model...` :
+                       `Model is busy...`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -308,14 +618,25 @@ function App() {
                     className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
                       msg.sender === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
-                        : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                        : (msg.metadata?.isIndicator
+                            ? 'bg-gray-50 text-gray-600 border border-dashed border-gray-300 italic rounded-bl-none'
+                            : (msg.metadata?.isError ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-none' : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'))
                     }`}
                   >
-                    <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                    <div className="flex items-center space-x-2">
+                      {msg.sender === 'agent' && (msg as any).category && (
+                        <span className={`${
+                          (msg as any).category === 'Knowledge' ? 'bg-purple-100 text-purple-700' :
+                          (msg as any).category === 'Request' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-700'
+                        } text-xs px-2 py-0.5 rounded-full`}>{(msg as any).category}</span>
+                      )}
+                      <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                    </div>
                     
                     {/* Message Metadata */}
-                    {msg.metadata && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens) && (
-                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
+                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.isCached)) && (
+                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
                         <div className="flex items-center justify-between">
                           {settings.displayTimestamp && (
                             <span>{formatTimestamp(msg.metadata.timestamp)}</span>
@@ -325,8 +646,12 @@ function App() {
                               {msg.metadata.model}
                             </span>
                           )}
+                          {/* Provider errors are now separate messages; no inline badges */}
+                          {settings.displayCachedIndicator && msg.metadata.isCached && msg.sender === 'agent' && (
+                            <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
+                          )}
                         </div>
-                        {settings.displayMessageTokens && msg.sender === 'agent' && (
+                        {settings.displayMessageTokens && msg.sender === 'agent' && !(settings.displayCachedIndicator && msg.metadata.isCached) && (
                           msg.metadata.usage ? (
                             <div className="mt-1 text-xs opacity-75">
                               Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
@@ -373,9 +698,16 @@ function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                placeholder={
+                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  isModelLoading ? 'Loading model...' :
+                  isModelUnloading ? 'Unloading model...' :
+                  isProviderBusy ? 'Model is busy...' :
+                  "Type your message..."
+                }
                 className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRateLimited}
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
               />
               
               {/* Mobile Textarea */}
@@ -384,18 +716,26 @@ function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={isRateLimited ? `Rate limited. Wait ${rateLimitCooldown}s...` : "Type your message..."}
+                placeholder={
+                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  isModelLoading ? 'Loading model...' :
+                  isModelUnloading ? 'Unloading model...' :
+                  isProviderBusy ? 'Model is busy...' :
+                  "Type your message..."
+                }
                 className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
-                disabled={isLoading || isRateLimited}
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
             
             <button
               onClick={handleSubmit}
-              disabled={isLoading || isRateLimited || input.trim() === ""}
+              disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === ""}
               className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
+              type="button"
               title="Send message"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,10 +744,15 @@ function App() {
             </button>
           </div>
           
-          {/* Rate Limit Warning */}
-          {isRateLimited && (
+          {/* Rate Limit / Busy Warning */}
+          {isRateLimited && selectedProvider !== 'ollama' && (
             <div className="mt-2 text-xs text-red-600 text-center">
               Rate limit active. You can send 1 message per minute.
+            </div>
+          )}
+          {isModelBusy && selectedProvider === 'ollama' && (
+            <div className="mt-2 text-xs text-amber-600 text-center">
+              {modelBusyText || 'Model is busy (loading/unloading). Please wait...'}
             </div>
           )}
         </div>
