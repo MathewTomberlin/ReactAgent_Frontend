@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAppContext } from './context/AppContext'
 import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
@@ -11,6 +11,7 @@ import { ChatSystemPrompts } from './components/ChatSystemPrompts'
 import { initializeMobileViewport } from './utils/mobileViewport'
 import { ConditionalTooltip } from './utils/uiUtils'
 import { PromptTextarea } from './components/PromptTextarea'
+import { getProviders, type Provider } from './api/ProviderClient'
 
 
 import './App.css'
@@ -108,6 +109,7 @@ function App() {
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(288); // Default width (w-72 = 18rem = 288px)
   // Keyboard visibility is inferred via CSS classes; no React state needed
 
   // Removed unused refs after PromptTextarea introduction
@@ -118,6 +120,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
   const [modelConfig, setModelConfig] = useState<{ temperature: number; maxTokens: number; topP: number; [key: string]: any }>({ temperature: 0.7, maxTokens: 150, topP: 0.8 });
+  const [providers, setProviders] = useState<Provider[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -158,6 +161,25 @@ function App() {
     localStorage.setItem('currentModelId', selectedModel);
   }, [selectedModel]);
 
+  // Load providers from API
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const response = await getProviders();
+        setProviders(response.availableProviders || []);
+      } catch (error) {
+        console.error('Failed to load providers from API:', error);
+        // Fallback to only the built-in provider
+        const fallbackProviders: Provider[] = [
+          { id: 'gemini', name: 'Google Gemini', type: 'remote', available: true },
+        ];
+        setProviders(fallbackProviders);
+      }
+    };
+
+    loadProviders();
+  }, []);
+
   // No-op: mobileViewport sets body/html classes to reflect keyboard visibility
 
   const isSubmittingRef = useRef<boolean>(false);
@@ -192,6 +214,42 @@ function App() {
     setShowMobileMenu(!showMobileMenu);
   };
 
+  // Sidebar resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    document.body.classList.add('sidebar-resizing');
+    
+    let currentWidth = sidebarWidth;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(200, Math.min(600, e.clientX)); // Min 200px, Max 600px
+      currentWidth = newWidth;
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('sidebar-resizing');
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      // Save width to localStorage
+      localStorage.setItem('sidebarWidth', currentWidth.toString());
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [sidebarWidth]);
+
+  // Load saved sidebar width on mount
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('sidebarWidth');
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= 200 && width <= 600) {
+        setSidebarWidth(width);
+      }
+    }
+  }, []);
+
   // Lock body scroll when mobile menu is open to avoid background layout shifts affecting focus
   useEffect(() => {
     if (showMobileMenu) {
@@ -224,14 +282,91 @@ function App() {
     }
   };
 
+  // Get current provider and model display information
+  const getProviderModelDisplay = () => {
+    const providerId = selectedProvider;
+    const modelId = selectedModel;
+    
+    // If no provider selected, return empty
+    if (!providerId) {
+      return '';
+    }
+
+    // Get provider name from the providers list
+    const provider = providers?.find(p => p.id === providerId);
+    const providerName = provider?.name || providerId;
+    
+    // Check if provider needs API key and if it's provided
+    const isLocalProvider = provider?.type?.toLowerCase() === 'local';
+    const needsApiKey = providerId !== 'gemini' && !isLocalProvider;
+    const hasApiKey = apiKey && apiKey.trim() !== '';
+    
+    // If provider needs API key but none provided, show as unavailable
+    if (needsApiKey && !hasApiKey) {
+      return '';
+    }
+    
+    // For header display, show simplified provider names
+    let displayProviderName = providerName;
+    if (providerId === 'ollama') {
+      displayProviderName = 'Ollama';
+    } else if (providerId === 'gemini') {
+      displayProviderName = 'Built-In';
+    }
+    
+    // If no model selected, show just provider
+    if (!modelId) {
+      return displayProviderName;
+    }
+    
+    // Return formatted display: Provider: Model
+    return `${displayProviderName}: ${modelId}`;
+  };
+
+  // Helper function to render provider/model display with proper formatting and truncation
+  const renderProviderModelDisplay = () => {
+    const display = getProviderModelDisplay();
+    if (!display) return null;
+    
+    const colonIndex = display.indexOf(':');
+    if (colonIndex === -1) {
+      return <span className="font-bold truncate">{display}</span>;
+    }
+    
+    const provider = display.substring(0, colonIndex);
+    const model = display.substring(colonIndex + 1);
+    
+    // Truncate model name if it's too long
+    const truncatedModel = model.length > 30 ? `${model.substring(0, 30)}...` : model;
+    
+    return (
+      <>
+        <span className="font-bold">{provider}</span>
+        <span className="truncate">:{truncatedModel}</span>
+      </>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden md:relative">
 
       {/* Sidebar - Desktop */}
-      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
+      <div 
+        className={`${sidebarOpen ? '' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0 relative`}
+        style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
+      >
         <div className="h-full flex flex-col">
+          
+          {/* Resize Handle */}
+          {sidebarOpen && (
+            <div
+              className="sidebar-resize-handle"
+              onMouseDown={handleResizeStart}
+              title="Drag to resize sidebar"
+            />
+          )}
           {/* Header - Fixed */}
-          <div className="flex-shrink-0 p-4 w-72">
+          <div className="flex-shrink-0 p-4 sidebar-header">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
               <button
@@ -247,8 +382,8 @@ function App() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4 w-72 space-y-4">
+          <div className="flex-1 overflow-y-auto sidebar-container">
+            <div className="p-4 sidebar-content space-y-4">
               {/* Chat */}
               <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
                 <div className="space-y-4">
@@ -433,11 +568,29 @@ function App() {
               </svg>
             </button>
             
-            <h1 className="text-xl font-semibold flex items-center">
-              <span className="font-sans font-black text-slate-900 tracking-wider leading-none uppercase">AGENT</span>
-              <span className="font-sans font-bold text-cyan-600 leading-none mx-1 italic transform -skew-x-6">AGENT</span>
-              <span className="font-mono font-black text-white bg-gradient-to-r from-indigo-600 to-purple-600 px-2 py-1 rounded-md leading-none flex items-center justify-center shadow-lg border border-indigo-400 ml-1" style={{ minHeight: '1.5rem' }}>AI</span>
-            </h1>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-semibold flex items-center">
+                <span className="font-sans font-black text-slate-900 tracking-wider leading-none uppercase">AGENT</span>
+                <span className="font-sans font-bold text-cyan-600 leading-none mx-1 italic transform -skew-x-6">AGENT</span>
+                <span className="font-mono font-black text-white bg-gradient-to-r from-indigo-600 to-purple-600 px-2 py-1 rounded-md leading-none flex items-center justify-center shadow-lg border border-indigo-400 ml-1" style={{ minHeight: '1.5rem' }}>AI</span>
+              </h1>
+              
+              {/* Provider/Model Display for Mobile */}
+              {getProviderModelDisplay() && (
+                <div className="text-sm text-gray-600 mt-1 md:hidden max-w-[200px] truncate">
+                  {renderProviderModelDisplay()}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Centered Provider/Model Display for Desktop */}
+          <div className="hidden md:flex items-center justify-center flex-1">
+            {getProviderModelDisplay() && (
+              <div className="text-sm text-gray-600 max-w-[300px] truncate">
+                {renderProviderModelDisplay()}
+              </div>
+            )}
           </div>
           
           <div className="flex items-center space-x-2">
@@ -460,9 +613,14 @@ function App() {
             
             {/* Loading Indicator */}
             {isLoading && (
-              <div className="flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded text-xs text-blue-700">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                <span>Typing...</span>
+              <div className="flex items-center space-x-1">
+                {/* Desktop: Full indicator with text */}
+                <div className="hidden sm:flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded text-xs text-blue-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span>Typing...</span>
+                </div>
+                {/* Mobile: Just colored circle */}
+                <div className="sm:hidden w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               </div>
             )}
           </div>
@@ -686,11 +844,11 @@ function App() {
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
-                      msg.sender === 'user'
+                      msg.role === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
                         : (msg.metadata?.isIndicator
                             ? 'bg-gray-50 text-gray-600 border border-dashed border-gray-300 italic rounded-bl-none'
@@ -698,22 +856,15 @@ function App() {
                     }`}
                   >
                     <div className="flex items-center space-x-2">
-                      {msg.sender === 'agent' && (msg as any).category && (
-                        <span className={`${
-                          (msg as any).category === 'Knowledge' ? 'bg-purple-100 text-purple-700' :
-                          (msg as any).category === 'Request' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-700'
-                        } text-xs px-2 py-0.5 rounded-full`}>{(msg as any).category}</span>
-                      )}
-                      <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                      <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
                     </div>
                     
                     {/* Message Metadata */}
-                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.isCached)) && (
-                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
+                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.cached)) && (
+                      <div className={`mt-2 text-xs ${msg.role === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
                         <div className="flex items-center justify-between">
                           {settings.displayTimestamp && (
-                            <span>{formatTimestamp(msg.metadata.timestamp)}</span>
+                            <span>{formatTimestamp(msg.timestamp)}</span>
                           )}
                           {settings.displayMessageModel && msg.metadata.model && (
                             <span className="ml-2 px-1 py-0.5 bg-gray-200 rounded text-gray-600">
@@ -721,14 +872,14 @@ function App() {
                             </span>
                           )}
                           {/* Provider errors are now separate messages; no inline badges */}
-                          {settings.displayCachedIndicator && msg.metadata.isCached && msg.sender === 'agent' && (
+                          {settings.displayCachedIndicator && msg.metadata.cached && msg.role === 'assistant' && (
                             <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
                           )}
                         </div>
-                        {settings.displayMessageTokens && msg.sender === 'agent' && !(settings.displayCachedIndicator && msg.metadata.isCached) && (
-                          msg.metadata.usage ? (
+                        {settings.displayMessageTokens && msg.role === 'assistant' && !(settings.displayCachedIndicator && msg.metadata.cached) && (
+                          msg.metadata.promptTokens ? (
                             <div className="mt-1 text-xs opacity-75">
-                              Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
+                              Input: {msg.metadata.promptTokens} | Output: {msg.metadata.completionTokens} | Total: {msg.metadata.totalTokens}
                             </div>
                           ) : (
                             <div className="mt-1 text-xs opacity-75 text-gray-500">

@@ -50,20 +50,20 @@ echo ""
 
 # Install dependencies
 echo -e "${YELLOW}Installing dependencies...${NC}"
-npm ci
+call npm ci
 
 # Build the project
 echo -e "${YELLOW}Building for production...${NC}"
-npm run build -- --mode=production
+call npm run build -- --mode=production
 
 # Deploy to Cloud Storage
 echo -e "${YELLOW}Deploying to Cloud Storage...${NC}"
-gsutil -m rsync -r -d dist $BUCKET_URL
+call gsutil -m rsync -r -d dist $BUCKET_URL
 
 # Set cache headers for assets
 echo -e "${YELLOW}Setting cache headers...${NC}"
-gsutil -m setmeta -h "Cache-Control:public, max-age=31536000, immutable" "${BUCKET_URL}/assets/**"
-gsutil -m setmeta -h "Cache-Control:no-cache" "${BUCKET_URL}/index.html"
+call gsutil -m setmeta -h "Cache-Control:public, max-age=31536000, immutable" "${BUCKET_URL}/assets/**"
+call gsutil -m setmeta -h "Cache-Control:no-cache" "${BUCKET_URL}/index.html"
 
 echo ""
 echo -e "${GREEN}✅ Successfully deployed to domain bucket!${NC}"

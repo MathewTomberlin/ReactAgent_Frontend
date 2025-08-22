@@ -46,7 +46,6 @@ const getClientId = (): string => {
 export interface ChatResponse {
   message: string;
   model?: string;
-  category?: 'Knowledge' | 'Request' | 'Chat';
   cached?: boolean;
   finishReason?: string;
   usage?: {
@@ -180,23 +179,57 @@ export const streamChat = (
 
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());
+  
+  // Track connection state for better error handling
+  let hasReceivedAnyEvent = false;
+  let connectionStartTime = Date.now();
+  
   es.addEventListener('agent', (e) => {
+    hasReceivedAnyEvent = true;
     try { onEvent({ type: 'agent', data: JSON.parse((e as MessageEvent).data) }); } catch {}
   });
+  
   es.addEventListener('answer', (e) => {
+    hasReceivedAnyEvent = true;
     try { onEvent({ type: 'answer', data: JSON.parse((e as MessageEvent).data) }); } catch {}
     es.close();
   });
+  
   // Provider error: render as a separate message but do not close the stream yet
   es.addEventListener('provider-error', (e) => {
+    hasReceivedAnyEvent = true;
     try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
   });
-  // Fatal stream error
+  
+  // Fatal stream error - distinguish between connection errors and processing errors
   es.addEventListener('error', (e) => {
-    try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+    const connectionTime = Date.now() - connectionStartTime;
+    
+    // If we haven't received any events and connection failed quickly, it's likely a connection error
+    if (!hasReceivedAnyEvent && connectionTime < 5000) {
+      console.log('SSE connection failed quickly, likely a connection error');
+      try { 
+        onEvent({ 
+          type: 'error', 
+          data: { 
+            message: 'Connection failed. Please check your network connection.',
+            isConnectionError: true 
+          } 
+        }); 
+      } catch {}
+    } else {
+      // If we received events or connection lasted longer, it might be a processing error
+      console.log('SSE stream error after receiving events or long connection time');
+      try { onEvent({ type: 'error', data: JSON.parse((e as MessageEvent).data) }); } catch {}
+    }
     es.close();
   });
-  es.onerror = () => { es.close(); };
+  
+  es.onerror = () => { 
+    console.log('SSE onerror triggered');
+    es.close(); 
+  };
+  
   return () => es.close();
 };
 
@@ -219,22 +252,6 @@ export const checkHealth = async (): Promise<boolean> => {
   } catch (error) {
     console.error("Health check failed:", error);
     return false;
-  }
-};
-
-// Cache statistics endpoint (admin only)
-export const getCacheStats = async (): Promise<any> => {
-  try {
-    const { data } = await axios.get(`${BASE_URL}/admin/cache/stats`, {
-      auth: {
-        username: 'admin',
-        password: 'admin'
-      }
-    });
-    return data;
-  } catch (error) {
-    console.error("Failed to get cache stats:", error);
-    return null;
   }
 };
 

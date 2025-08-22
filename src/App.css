@@ -31,6 +31,117 @@
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
+/* Desktop sidebar optimizations */
+@media (min-width: 769px) {
+  /* Ensure sidebar container never shows horizontal scrollbar */
+  .sidebar-container {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Ensure sidebar content doesn't overflow horizontally */
+  .sidebar-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Fix sidebar header width */
+  .sidebar-header {
+    max-width: 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Ensure all sidebar content respects container width */
+  .sidebar-content *,
+  .sidebar-header * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Prevent specific elements from overflowing */
+  .sidebar-content input,
+  .sidebar-content select,
+  .sidebar-content textarea,
+  .sidebar-content button,
+  .sidebar-header input,
+  .sidebar-header select,
+  .sidebar-header textarea,
+  .sidebar-header button {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Ensure text doesn't overflow */
+  .sidebar-content label,
+  .sidebar-content span,
+  .sidebar-content div,
+  .sidebar-header label,
+  .sidebar-header span,
+  .sidebar-header div {
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    min-width: 0 !important;
+  }
+  
+  /* Specific fix for collapsible groups and form elements */
+  .sidebar-content .collapsible-group-top,
+  .sidebar-content .collapsible-group-nested {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Sidebar resize handle styles */
+  .sidebar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 10;
+    transition: background-color 0.2s ease;
+  }
+  
+  .sidebar-resize-handle:hover {
+    background-color: #3b82f6;
+  }
+  
+  .sidebar-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 100%;
+    background: #e5e7eb;
+    transition: background-color 0.2s ease;
+  }
+  
+  .sidebar-resize-handle:hover::before {
+    background-color: #3b82f6;
+  }
+  
+  /* Disable transitions when resizing */
+  body.sidebar-resizing * {
+    transition: none !important;
+    user-select: none !important;
+  }
+  
+  /* Cursor styles during resize */
+  body.sidebar-resizing {
+    cursor: col-resize !important;
+  }
+}
+
 /* Mobile optimizations */
 @media (max-width: 768px) and (orientation: portrait) {
   /* Ensure proper touch targets */
@@ -39,62 +150,94 @@
     min-width: 44px;
   }
   
+  /* Mobile layout container - simple flex layout */
   .mobile-layout {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    background: #f9fafb !important;
+    height: 100vh !important;
     height: 100dvh !important;
-    min-height: 10dvh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #f9fafb !important;
+    overflow: hidden !important;
   }
   
-  /* Fixed header - always stays at top */
+  /* Fixed header - truly stuck to browser top */
   .mobile-header {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    z-index: 100 !important;
+    z-index: 1000 !important;
     height: 60px !important;
     background: white !important;
     border-bottom: 1px solid #e5e7eb !important;
+    /* Ensure it's always on top of the browser viewport */
+    transform: translateZ(0) !important;
+    /* Prevent content overflow */
+    overflow: hidden !important;
   }
   
-  /* Fixed input area - moves up when keyboard appears */
+  /* Ensure header content doesn't overflow */
+  .mobile-header .flex {
+    min-width: 0 !important;
+  }
+  
+  /* Truncate long text in header */
+  .mobile-header .truncate {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  
+  /* Fixed input area - positioned to stay above keyboard */
   .mobile-input {
     position: fixed !important;
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    z-index: 100 !important;
+    z-index: 1000 !important;
     background: white !important;
     border-top: 1px solid #e5e7eb !important;
+    padding: 1rem !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    transform: translateZ(0) !important;
   }
   
-  /* Messages area - scrollable between header and input */
+  /* Messages area - scrollable between fixed header and input */
   .mobile-messages {
     flex: 1 !important;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: none;
-    padding-top: 75px;
-    padding-bottom: 85px;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: none !important;
+    /* Account for fixed header and input area */
+    padding-top: 75px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-bottom: 80px !important;
+    background: #f9fafb !important;
   }
   
-  /* Mobile menu - positioned below header */
+  /* When keyboard is visible, adjust input position to stay above keyboard */
+  .keyboard-visible .mobile-input {
+    bottom: var(--keyboard-height, 250px) !important; /* Use dynamic keyboard height */
+  }
+  
+  /* Adjust messages area when keyboard is visible */
+  .keyboard-visible .mobile-messages {
+    padding-bottom: calc(80px + var(--keyboard-height, 250px)) !important; /* Account for input + keyboard height */
+  }
+  
+  /* Mobile menu - positioned below header and covering input area */
   .mobile-menu {
     position: fixed !important;
-    top: 60px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 100;
-    background: white;
-    border-bottom: 1px solid #e5e7eb;
-    display: flex;
-    flex-direction: column;
+    top: 60px !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 1100 !important;
+    background: white !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
 
   /* Ensure scrollable content can scroll properly */
@@ -229,6 +372,24 @@ textarea:focus-visible {
   }
 }
 
+/* Additional mobile layout fixes for edge cases */
+@media (max-width: 768px) {
+  /* Fix for iOS Safari viewport issues */
+  @supports (-webkit-touch-callout: none) {
+    .mobile-layout {
+      height: 100vh !important;
+      height: -webkit-fill-available !important;
+    }
+  }
+  
+  /* Fix for Android Chrome viewport issues */
+  @supports not (-webkit-touch-callout: none) {
+    .mobile-layout {
+      height: 100dvh !important;
+    }
+  }
+}
+
 /* Mobile textarea improvements - basic fallback */
 @media (max-width: 768px) {
   /* Basic mobile textarea styles */
@@ -245,5 +406,24 @@ textarea:focus-visible {
   .mobile-menu .collapsible-group-top > div,
   .mobile-menu .collapsible-group-nested > div {
     will-change: transform;
+  }
+  
+  /* Prevent zoom on input focus */
+  .mobile-input input,
+  .mobile-input textarea {
+    font-size: 16px !important;
+    -webkit-text-size-adjust: 100% !important;
+    -webkit-appearance: none !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Prevent iOS zoom on focus */
+  @supports (-webkit-touch-callout: none) {
+    .mobile-input input,
+    .mobile-input textarea {
+      font-size: 16px !important;
+      -webkit-user-select: text !important;
+      -webkit-touch-callout: default !important;
+    }
   }
 }
