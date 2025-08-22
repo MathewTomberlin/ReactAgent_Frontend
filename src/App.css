@@ -38,6 +38,43 @@
     overflow-x: hidden !important;
     overflow-y: auto !important;
   }
+
+  /* Prevent content resizing during sidebar transition */
+  .sidebar-container,
+  .sidebar-content,
+  .sidebar-header {
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Lock content dimensions during transition to prevent word wrapping */
+  .sidebar-container *,
+  .sidebar-content *,
+  .sidebar-header * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Prevent content resizing during sidebar transition */
+  .sidebar-transitioning .sidebar-container,
+  .sidebar-transitioning .sidebar-content,
+  .sidebar-transitioning .sidebar-header {
+    overflow: hidden !important;
+  }
+
+  /* Lock content dimensions during transition to prevent word wrapping */
+  .sidebar-transitioning .sidebar-container *,
+  .sidebar-transitioning .sidebar-content *,
+  .sidebar-transitioning .sidebar-header * {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
   
   /* Ensure sidebar content doesn't overflow horizontally */
   .sidebar-content {
@@ -76,6 +113,67 @@
     max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  /* Exception for desktop sidebar close button */
+  .sidebar-header button[title="Close sidebar"],
+  .desktop-close-button {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.25rem !important;
+    border-radius: 0.375rem !important;
+    transition: background-color 0.2s ease !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Exception for mobile menu header button */
+  .mobile-menu-header button,
+  .mobile-menu .mobile-menu-header button {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.5rem !important;
+    border-radius: 0.375rem !important;
+    transition: background-color 0.2s ease !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+
+  }
+
+  .mobile-menu-header button:hover,
+  .mobile-menu .mobile-menu-header button:hover,
+  .mobile-close-button:hover {
+    background-color: #f3f4f6 !important;
+  }
+
+  /* Specific styles for the close button in desktop section */
+  .mobile-close-button {
+    color: #6b7280 !important;
+    background-color: transparent !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.5rem !important;
+    border-radius: 0.375rem !important;
+    transition: background-color 0.2s ease !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+  }
+
+  .mobile-close-button:hover {
+    color: #374151 !important;
+    background-color: #f3f4f6 !important;
   }
   
   /* Ensure text doesn't overflow */
@@ -238,6 +336,56 @@
     border-bottom: 1px solid #e5e7eb !important;
     display: flex !important;
     flex-direction: column !important;
+  }
+
+  /* Mobile menu header - fix button layout */
+  .mobile-menu-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 0.5rem 1rem !important;
+    flex-shrink: 0 !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    width: 100% !important;
+  }
+
+  /* Mobile menu header title */
+  .mobile-menu-header h3 {
+    margin: 0 !important;
+    flex: 1 !important;
+  }
+
+  /* Mobile menu header button - override desktop sidebar button styles */
+  .mobile-menu-header button {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.5rem !important;
+    border-radius: 0.375rem !important;
+    transition: background-color 0.2s ease !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+
+  }
+
+  .mobile-menu-header button:hover,
+  .mobile-close-button:hover {
+    background-color: #f3f4f6 !important;
+  }
+
+  /* Specific styles for the close button */
+  .mobile-close-button {
+    color: #6b7280 !important;
+    background-color: transparent !important;
+  }
+
+  .mobile-close-button:hover {
+    color: #374151 !important;
+    background-color: #f3f4f6 !important;
   }
 
   /* Ensure scrollable content can scroll properly */
