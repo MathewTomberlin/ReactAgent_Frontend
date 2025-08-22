@@ -110,6 +110,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(288); // Default width (w-72 = 18rem = 288px)
+  const [sidebarTransitioning, setSidebarTransitioning] = useState(false);
   // Keyboard visibility is inferred via CSS classes; no React state needed
 
   // Removed unused refs after PromptTextarea introduction
@@ -207,7 +208,13 @@ function App() {
   };
 
   const toggleSidebar = () => {
+    setSidebarTransitioning(true);
     setSidebarOpen(!sidebarOpen);
+    
+    // Remove transition class after animation completes
+    setTimeout(() => {
+      setSidebarTransitioning(false);
+    }, 300); // Match the CSS transition duration
   };
 
   const toggleMobileMenu = () => {
@@ -352,7 +359,7 @@ function App() {
 
       {/* Sidebar - Desktop */}
       <div 
-        className={`${sidebarOpen ? '' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0 relative`}
+        className={`${sidebarOpen ? '' : 'w-0'} ${sidebarTransitioning ? 'sidebar-transitioning' : ''} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0 relative`}
         style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
       >
         <div className="h-full flex flex-col">
@@ -371,7 +378,7 @@ function App() {
               <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
               <button
                 onClick={toggleSidebar}
-                className="text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
+                className="desktop-close-button text-gray-500 hover:text-gray-700 p-1 rounded hover:bg-gray-100"
                 title="Close sidebar"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -628,11 +635,23 @@ function App() {
 
         {/* Mobile Menu */}
         <div className={`md:hidden fixed inset-0 z-50 bg-white mobile-menu flex flex-col overflow-y-auto transition-transform duration-300 ${showMobileMenu ? 'translate-x-0' : 'translate-x-full'}`}>
-            <div className="flex items-center justify-between py-2 px-4 flex-shrink-0">
+            <div className="mobile-menu-header">
               <h3 className="text-lg font-bold text-gray-800">Settings</h3>
               <button
                 onClick={toggleMobileMenu}
-                className="text-gray-500 hover:text-gray-700"
+                className="mobile-close-button"
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0.5rem',
+                  borderRadius: '0.375rem',
+                  transition: 'background-color 0.2s ease',
+                  flexShrink: 0,
+                  marginLeft: 'auto'
+                }}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

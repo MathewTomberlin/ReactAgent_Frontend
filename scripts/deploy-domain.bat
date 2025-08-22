@@ -25,7 +25,7 @@ if %errorlevel% neq 0 (
 )
 
 REM Check if we're authenticated
-gcloud auth list --filter=status:ACTIVE --format="value(account)" | findstr /r "." >nul
+call gcloud auth list --filter=status:ACTIVE --format="value(account)" | findstr /r "." >nul
 if %errorlevel% neq 0 (
     echo WARNING: You are not authenticated with gcloud. Please run:
     echo gcloud auth login
@@ -35,10 +35,10 @@ if %errorlevel% neq 0 (
 
 REM Set the project
 echo Setting project to: %PROJECT_ID%
-gcloud config set project %PROJECT_ID%
+call gcloud config set project %PROJECT_ID%
 
 REM Check if bucket exists
-gsutil ls %BUCKET_URL% >nul 2>&1
+call gsutil ls %BUCKET_URL% >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Bucket %DOMAIN_BUCKET% does not exist.
     echo Please run the setup script first: scripts\setup-domain-bucket.bat
@@ -67,7 +67,7 @@ REM Set cache headers for assets
 echo Setting cache headers...
 call gsutil ls %BUCKET_URL%/index.html >nul 2>&1
 if %errorlevel% equ 0 (
-    call gsutil setmeta -h "Cache-Control:no-cache" "%BUCKET_URL%/index.html"
+    call gsutil setmeta -h "Cache-Control:no-cache, no-store, must-revalidate" "%BUCKET_URL%/index.html"
     echo Set no-cache header for index.html
 ) else (
     echo WARNING: index.html not found in bucket root
@@ -96,10 +96,39 @@ echo ========================================
 echo   Successfully deployed to domain bucket!
 echo ========================================
 echo.
+echo Deployment timestamp: %date% %time%
 echo URLs:
 echo Direct GCS URL: https://storage.googleapis.com/%DOMAIN_BUCKET%/index.html
 echo Domain URL: https://www.agentagentai.com
 echo.
-echo Note: Changes may take a few minutes to propagate.
+echo Checking if the site is accessible...
+echo.
+echo Testing direct GCS access...
+call gsutil ls %BUCKET_URL%/index.html >nul 2>&1
+if %errorlevel% equ 0 (
+    echo ✓ Direct GCS access: OK
+) else (
+    echo ✗ Direct GCS access: FAILED
+)
+
+echo.
+echo ========================================
+echo   IMPORTANT: DNS Configuration Required
+echo ========================================
+echo.
+echo If you cannot access https://www.agentagentai.com, you need to:
+echo.
+echo 1. Log into your Cloudflare dashboard
+echo 2. Add your domain: agentagentai.com
+echo 3. Update your domain's nameservers at GoDaddy to point to Cloudflare
+echo 4. In Cloudflare DNS settings, create a CNAME record:
+echo    - Name: www
+echo    - Target: c.storage.googleapis.com
+echo    - Proxy status: Proxied (orange cloud)
+echo 5. In Cloudflare SSL/TLS settings:
+echo    - Set SSL/TLS mode to 'Full'
+echo    - Enable 'Always Use HTTPS'
+echo.
+echo Note: DNS changes may take up to 48 hours to propagate globally.
 echo.
 pause
