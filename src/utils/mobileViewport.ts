@@ -2,7 +2,7 @@
 export const initializeMobileViewport = () => {
   // Only run on mobile devices
   if (typeof window === 'undefined' || window.innerWidth > 768) {
-    return;
+    return () => {}; // Return empty cleanup function
   }
 
   // Track keyboard state
@@ -62,5 +62,8 @@ export const initializeMobileViewport = () => {
   return () => {
     document.removeEventListener('focusin', handleInputFocus, true);
     document.removeEventListener('focusout', handleInputBlur, true);
+    // Clean up any classes that might have been added
+    document.body.classList.remove('keyboard-visible');
+    document.documentElement.classList.remove('keyboard-visible');
   };
 };

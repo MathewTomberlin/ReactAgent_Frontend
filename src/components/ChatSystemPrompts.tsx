@@ -1,9 +1,8 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Tooltip } from './Tooltip';
 import { PromptTextarea } from './PromptTextarea';
 import { PromptInputMobile } from './PromptInputMobile';
-
-const isMobile = () => typeof window !== 'undefined' && window.innerWidth <= 768;
+import { useIsMobile } from '../utils/uiUtils';
 
 interface ChatSystemPromptsProps {
   systemPrompt: string;
@@ -13,7 +12,7 @@ interface ChatSystemPromptsProps {
 }
 
 export const ChatSystemPrompts: React.FC<ChatSystemPromptsProps> = React.memo(({ systemPrompt, characterPrompt, onDebouncedChange, onImmediateCommit }) => {
-  const mobile = useMemo(() => isMobile(), []);
+  const mobile = useIsMobile();
 
   return (
     <div className="flex flex-col space-y-3">
@@ -23,8 +22,8 @@ export const ChatSystemPrompts: React.FC<ChatSystemPromptsProps> = React.memo(({
             label="System Prompt"
             value={systemPrompt}
             onCommit={(next) => onImmediateCommit({ systemPrompt: next })}
-            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
-            className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="You are Agent Agent, a helpful AI assistant. Respond to the user's messages with useful advice."
+            className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
           />
         ) : (
           <PromptTextarea
@@ -32,8 +31,8 @@ export const ChatSystemPrompts: React.FC<ChatSystemPromptsProps> = React.memo(({
             value={systemPrompt}
             onChangeDebounced={(next) => onDebouncedChange({ systemPrompt: next })}
             onCommitImmediate={(next) => onImmediateCommit({ systemPrompt: next })}
-            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
-            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="You are Agent Agent, a helpful AI assistant. Respond to the user's messages with useful advice."
+            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
           />
         )}
       </Tooltip>
@@ -44,8 +43,8 @@ export const ChatSystemPrompts: React.FC<ChatSystemPromptsProps> = React.memo(({
               label="Character Prompt"
               value={characterPrompt || ''}
               onCommit={(next) => onImmediateCommit({ characterPrompt: next })}
-              placeholder="You are a wise and intelligent software engineer and code reviewer."
-              className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="You are Agent Agent, a wise and intelligent software engineer and code reviewer."
+              className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           ) : (
             <PromptTextarea
@@ -53,8 +52,8 @@ export const ChatSystemPrompts: React.FC<ChatSystemPromptsProps> = React.memo(({
               value={characterPrompt || ''}
               onChangeDebounced={(next) => onDebouncedChange({ characterPrompt: next })}
               onCommitImmediate={(next) => onImmediateCommit({ characterPrompt: next })}
-              placeholder="You are a wise and intelligent software engineer and code reviewer."
-              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="You are Agent Agent, a wise and intelligent software engineer and code reviewer."
+              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           )}
           <div className="text-xs text-gray-500 mt-1">If set, it is appended after the System Prompt.</div>

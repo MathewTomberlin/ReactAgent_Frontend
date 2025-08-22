@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useSettings } from './SettingsContext';
 import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
+import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, isBuiltInProviderBusy as isBuiltInProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
 
 interface Message {
   sender: 'user' | 'agent';
@@ -42,6 +42,7 @@ interface AppState {
   isModelLoading: boolean;
   isModelUnloading: boolean;
   isProviderBusy: boolean;
+  isBuiltInProviderBusy: boolean; // New state for Built-In provider global rate limiting
   importMemory: (memoryToken?: string, memoryChunks?: string[]) => void;
   addUserMessage: (message: string) => void;
   sendToAgent: (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
@@ -65,6 +66,7 @@ const AppContext = createContext<AppState>({
   isModelLoading: false,
   isModelUnloading: false,
   isProviderBusy: false,
+  isBuiltInProviderBusy: false,
   importMemory: () => {},
   addUserMessage: () => {},
   sendToAgent: () => {},
@@ -91,6 +93,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [isModelUnloading, setIsModelUnloading] = useState(false);
   const [isProviderBusy, setIsProviderBusy] = useState(false);
+  const [isBuiltInProviderBusy, setIsBuiltInProviderBusy] = useState(false); // New state for Built-In provider global rate limiting
 
   // Check admin status on mount
   useEffect(() => {
@@ -129,6 +132,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Check Built-In provider busy status periodically
+  useEffect(() => {
+    const checkBuiltInProviderStatus = async () => {
+      try {
+        const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+        if (providerId === 'gemini') {
+          const builtInStatus = await isBuiltInProviderBusyApi();
+          setIsBuiltInProviderBusy(builtInStatus.is_busy);
+        } else {
+          setIsBuiltInProviderBusy(false);
+        }
+      } catch (error) {
+        console.error('Failed to check Built-In provider status:', error);
+        setIsBuiltInProviderBusy(false);
+      }
+    };
+
+    // Check immediately and then every 10 seconds for more responsive updates
+    checkBuiltInProviderStatus();
+    const interval = setInterval(checkBuiltInProviderStatus, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Helper to set busy state with optional auto-clear
   const setBusy = useCallback((busy: boolean, text?: string) => {
     setIsModelBusy(busy);
@@ -158,6 +185,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         // Check if Ollama provider is busy
         const busy = await isProviderBusyApi(providerId);
         setIsProviderBusy(busy);
+        setIsBuiltInProviderBusy(false); // Not applicable for Ollama
       } else {
         // For non-Ollama providers, set default state
         setModelStatus({
@@ -170,6 +198,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setIsModelLoading(false);
         setIsModelUnloading(false);
         setIsProviderBusy(false);
+        
+        // Check if Built-In provider is busy due to global rate limiting
+        if (providerId === 'gemini') {
+          try {
+            const builtInStatus = await isBuiltInProviderBusyApi();
+            setIsBuiltInProviderBusy(builtInStatus.is_busy);
+          } catch (error) {
+            console.error('Failed to check Built-In provider busy status:', error);
+            setIsBuiltInProviderBusy(false);
+          }
+        } else {
+          setIsBuiltInProviderBusy(false);
+        }
       }
     } catch (error) {
       console.error('Failed to refresh model status:', error);
@@ -185,6 +226,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsModelLoading(false);
       setIsModelUnloading(false);
       setIsProviderBusy(false);
+      setIsBuiltInProviderBusy(false);
     }
   }, []);
 
@@ -644,6 +686,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       isModelLoading,
       isModelUnloading,
       isProviderBusy,
+      isBuiltInProviderBusy,
       importMemory,
       addUserMessage,
       sendToAgent,

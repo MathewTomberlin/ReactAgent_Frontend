@@ -505,6 +505,16 @@ export const isProviderBusy = async (providerId: string): Promise<boolean> => {
   }
 };
 
+export const isBuiltInProviderBusy = async (): Promise<{ is_busy: boolean; reason?: string; rate_limit?: string }> => {
+  try {
+    const response = await axios.get<{ is_busy: boolean; reason?: string; rate_limit?: string }>(`${BASE_URL}/api/model-status/provider/builtin/busy`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw new Error(`Failed to check Built-In provider busy status: ${axiosError.response?.data || axiosError.message}`);
+  }
+};
+
 export const getCurrentModelStatus = async (): Promise<ModelStatus> => {
   try {
     const providerId = localStorage.getItem('currentProviderId') || 'gemini';
