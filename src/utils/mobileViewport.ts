@@ -2,65 +2,103 @@
 export const initializeMobileViewport = () => {
   // Only run on mobile devices
   if (typeof window === 'undefined' || window.innerWidth > 768) {
-    return;
+    return () => {}; // Return empty cleanup function
   }
 
-  // Track keyboard state
-  let isKeyboardVisible = false;
+  // Enable Virtual Keyboard API with viewport resizing behavior
+  if ('virtualKeyboard' in navigator) {
+    (navigator as any).virtualKeyboard.overlaysContent = false;
+    console.log('Virtual Keyboard API enabled with overlaysContent = false');
+  }
 
-  // Set keyboard visible state
-  const setKeyboardVisible = (visible: boolean) => {
-    if (visible !== isKeyboardVisible) {
+  // Track keyboard state and height
+  let isKeyboardVisible = false;
+  let keyboardHeight = 0;
+
+  // Set keyboard visible state with dynamic height adjustment
+  const setKeyboardVisible = (visible: boolean, height: number = 0) => {
+    if (visible !== isKeyboardVisible || keyboardHeight !== height) {
       isKeyboardVisible = visible;
+      keyboardHeight = height;
+      console.log('Keyboard visibility changed:', visible, 'Height:', height);
 
       if (visible) {
-        // Add keyboard visible class
         document.body.classList.add('keyboard-visible');
         document.documentElement.classList.add('keyboard-visible');
+        // Set custom CSS property for dynamic height adjustment
+        document.documentElement.style.setProperty('--keyboard-height', `${height}px`);
       } else {
-        // Remove keyboard visible class
         document.body.classList.remove('keyboard-visible');
         document.documentElement.classList.remove('keyboard-visible');
+        document.documentElement.style.removeProperty('--keyboard-height');
       }
     }
   };
 
-  // Handle input focus (keyboard appears)
+  // Use Visual Viewport API for accurate keyboard detection
+  if (window.visualViewport) {
+    const handleVisualViewportChange = () => {
+      const currentHeight = window.visualViewport!.height;
+      const heightDifference = window.innerHeight - currentHeight;
+      const keyboardDetected = heightDifference > 150; // Keyboard is typically >150px
+      
+      console.log('Visual viewport change:', {
+        windowHeight: window.innerHeight,
+        currentHeight,
+        heightDifference,
+        keyboardDetected
+      });
+      
+      if (keyboardDetected) {
+        setKeyboardVisible(true, heightDifference);
+      } else {
+        setKeyboardVisible(false, 0);
+      }
+    };
+
+    // Initial check
+    handleVisualViewportChange();
+    
+    window.visualViewport.addEventListener('resize', handleVisualViewportChange);
+    
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleVisualViewportChange);
+      // Clean up any classes that might have been added
+      document.body.classList.remove('keyboard-visible');
+      document.documentElement.classList.remove('keyboard-visible');
+      document.documentElement.style.removeProperty('--keyboard-height');
+    };
+  }
+
+  // Fallback to focus events for older browsers
   const handleInputFocus = (event: FocusEvent) => {
     const target = event.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-      setKeyboardVisible(true);
+      setKeyboardVisible(true, 250); // Default keyboard height
     }
   };
 
-  // Handle input blur (keyboard disappears)
   const handleInputBlur = (event: FocusEvent) => {
     const target = event.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-      // Use a longer delay to avoid conflicts with textarea focus restoration
       setTimeout(() => {
         const activeElement = document.activeElement;
-        // Only hide keyboard if we're definitely not focused on any input/textarea
-        // and the target is still not focused (meaning focus restoration didn't occur)
         if (!activeElement || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA')) {
-          // Double-check after another brief delay to account for focus restoration
-          setTimeout(() => {
-            const currentActive = document.activeElement;
-            if (!currentActive || (currentActive.tagName !== 'INPUT' && currentActive.tagName !== 'TEXTAREA')) {
-              setKeyboardVisible(false);
-            }
-          }, 50);
+          setKeyboardVisible(false, 0);
         }
-      }, 150); // Increased from 100ms to 150ms to account for focus restoration
+      }, 100);
     }
   };
 
-  // Add focus/blur event listeners (do not use passive=false that might block browser behavior)
+  // Add focus/blur event listeners
   document.addEventListener('focusin', handleInputFocus, true);
   document.addEventListener('focusout', handleInputBlur, true);
 
   return () => {
     document.removeEventListener('focusin', handleInputFocus, true);
     document.removeEventListener('focusout', handleInputBlur, true);
+    // Clean up any classes that might have been added
+    document.body.classList.remove('keyboard-visible');
+    document.documentElement.classList.remove('keyboard-visible');
   };
 };

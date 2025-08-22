@@ -1,24 +1,23 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useSettings } from './SettingsContext';
-import type { ReactNode } from 'react';
-import { sendChatMessage, getCacheStats, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
+import { sendChatMessage, checkIsAdmin, streamChat, type ChatResponse, type ApiError, getOrCreateSession, getCurrentModelStatus, isProviderBusy as isProviderBusyApi, isBuiltInProviderBusy as isBuiltInProviderBusyApi, streamModelStatus, type ModelStatus } from '../api/FastAPIClient';
 
 interface Message {
-  sender: 'user' | 'agent';
-  text: string;
-  category?: 'Knowledge' | 'Request' | 'Chat';
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
   metadata?: {
-    isCached?: boolean;
-    isError?: boolean;
-    isIndicator?: boolean;
+    cached?: boolean;
     model?: string;
+    provider?: string;
+    temperature?: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    isIndicator?: boolean;
+    isError?: boolean;
     finishReason?: string;
-    usage?: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    };
-    timestamp: Date;
   };
 }
 
@@ -30,11 +29,6 @@ interface AppState {
   isModelBusy: boolean;
   modelBusyText?: string;
   connectionStatus: 'online' | 'offline' | 'checking';
-  cacheStats: {
-    hits: number;
-    misses: number;
-    hitRate: number;
-  } | null;
   isAdmin: boolean;
   sessionId: string;
   // Model loading states
@@ -42,6 +36,7 @@ interface AppState {
   isModelLoading: boolean;
   isModelUnloading: boolean;
   isProviderBusy: boolean;
+  isBuiltInProviderBusy: boolean; // New state for Built-In provider global rate limiting
   importMemory: (memoryToken?: string, memoryChunks?: string[]) => void;
   addUserMessage: (message: string) => void;
   sendToAgent: (text: string, settings?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => void;
@@ -58,13 +53,13 @@ const AppContext = createContext<AppState>({
   isModelBusy: false,
   modelBusyText: undefined,
   connectionStatus: 'checking',
-  cacheStats: null,
   isAdmin: false,
   sessionId: '',
   modelStatus: null,
   isModelLoading: false,
   isModelUnloading: false,
   isProviderBusy: false,
+  isBuiltInProviderBusy: false,
   importMemory: () => {},
   addUserMessage: () => {},
   sendToAgent: () => {},
@@ -82,7 +77,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isModelBusy, setIsModelBusy] = useState(false);
   const [modelBusyText, setModelBusyText] = useState<string | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('online');
-  const [cacheStats, setCacheStats] = useState<{ hits: number; misses: number; hitRate: number } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastUserMessage, setLastUserMessage] = useState<string>('');
   const [sessionId, setSessionId] = useState<string>('');
@@ -91,6 +85,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [isModelUnloading, setIsModelUnloading] = useState(false);
   const [isProviderBusy, setIsProviderBusy] = useState(false);
+  const [isBuiltInProviderBusy, setIsBuiltInProviderBusy] = useState(false); // New state for Built-In provider global rate limiting
 
   // Check admin status on mount
   useEffect(() => {
@@ -105,26 +100,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     checkAdmin();
   }, []);
 
-  // Fetch cache statistics periodically
+  // Check Built-In provider busy status periodically
   useEffect(() => {
-    const fetchCacheStats = async () => {
+    const checkBuiltInProviderStatus = async () => {
       try {
-        const stats = await getCacheStats();
-        if (stats) {
-          setCacheStats({
-            hits: stats.cache_hits || 0,
-            misses: stats.cache_misses || 0,
-            hitRate: stats.hit_rate_percent || 0
-          });
+        const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+        if (providerId === 'gemini') {
+          const builtInStatus = await isBuiltInProviderBusyApi();
+          setIsBuiltInProviderBusy(builtInStatus.is_busy);
+        } else {
+          setIsBuiltInProviderBusy(false);
         }
       } catch (error) {
-        console.log('Cache stats not available (admin only)');
+        console.error('Failed to check Built-In provider status:', error);
+        setIsBuiltInProviderBusy(false);
       }
     };
 
-    // Fetch immediately and then every 30 seconds
-    fetchCacheStats();
-    const interval = setInterval(fetchCacheStats, 30000);
+    // Check immediately and then every 30 seconds (reduced from 10 seconds for more responsive updates)
+    checkBuiltInProviderStatus();
+    const interval = setInterval(checkBuiltInProviderStatus, 30000);
 
     return () => clearInterval(interval);
   }, []);
@@ -158,6 +153,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         // Check if Ollama provider is busy
         const busy = await isProviderBusyApi(providerId);
         setIsProviderBusy(busy);
+        setIsBuiltInProviderBusy(false); // Not applicable for Ollama
       } else {
         // For non-Ollama providers, set default state
         setModelStatus({
@@ -170,6 +166,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setIsModelLoading(false);
         setIsModelUnloading(false);
         setIsProviderBusy(false);
+        
+        // Check if Built-In provider is busy due to global rate limiting
+        if (providerId === 'gemini') {
+          try {
+            const builtInStatus = await isBuiltInProviderBusyApi();
+            setIsBuiltInProviderBusy(builtInStatus.is_busy);
+          } catch (error) {
+            console.error('Failed to check Built-In provider busy status:', error);
+            setIsBuiltInProviderBusy(false);
+          }
+        } else {
+          setIsBuiltInProviderBusy(false);
+        }
       }
     } catch (error) {
       console.error('Failed to refresh model status:', error);
@@ -185,6 +194,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsModelLoading(false);
       setIsModelUnloading(false);
       setIsProviderBusy(false);
+      setIsBuiltInProviderBusy(false);
     }
   }, []);
 
@@ -268,9 +278,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       pollStatus(); // Initial check
 
-      // Poll every 10 seconds for non-Ollama providers, 5 seconds for Ollama
+      // Poll every 15 seconds for non-Ollama providers, 10 seconds for Ollama (reduced from 10/5 seconds)
       const providerId = localStorage.getItem('currentProviderId');
-      const pollInterval = providerId === 'ollama' ? 5000 : 10000;
+      const pollInterval = providerId === 'ollama' ? 10000 : 15000;
 
       const interval = setInterval(pollStatus, pollInterval);
 
@@ -325,21 +335,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const addUserMessage = (text: string) => {
     const newMessage: Message = {
-      sender: "user",
-      text,
-      metadata: {
-        timestamp: new Date()
-      }
+      id: Date.now().toString(), // Simple ID
+      role: "user",
+      content: text,
+      timestamp: new Date()
     };
     setMessages(prev => [...prev, newMessage]);
     setLastUserMessage(text);
   };
 
   const sendingRef = useRef<boolean>(false);
+  const activeRequestRef = useRef<string | null>(null); // Track active request by message content
+  
   const sendToAgent = async (text: string, options?: { disableLongMemoryRecall?: boolean; disableAllMemoryRecall?: boolean }) => {
     if (sendingRef.current) {
       return; // guard against double send due to rapid events
     }
+    
+    // Check if this exact message is already being processed
+    if (activeRequestRef.current === text) {
+      console.log('Request already in progress for this message, skipping duplicate');
+      return;
+    }
+    
     // Prevent sending if model is currently loading/unloading
     if (isModelLoading || isModelUnloading || isProviderBusy) {
       console.log('Cannot send message: Model is currently loading/unloading');
@@ -361,6 +379,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     addUserMessage(text);
     setIsLoading(true);
     sendingRef.current = true;
+    activeRequestRef.current = text; // Track this request
 
     try {
       // Prefer SSE for realtime agent status; fallback to REST on error
@@ -399,8 +418,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (!indicatorShown && indicatorTimer === undefined) {
             indicatorTimer = window.setTimeout(() => {
               setMessages(prev => {
-                const withoutTrailingStatus = prev.filter(m => !(m.sender === 'agent' && m.text.startsWith('Agent ')));
-                return [...withoutTrailingStatus, { sender: 'agent', text: `Agent ${statusText.toLowerCase()}`, metadata: { timestamp: new Date(), isIndicator: true } }];
+                const withoutTrailingStatus = prev.filter(m => !(m.role === 'assistant' && m.content.startsWith('Agent ')));
+                return [...withoutTrailingStatus, { id: Date.now().toString(), role: 'assistant', content: `Agent ${statusText.toLowerCase()}`, timestamp: new Date(), metadata: { isIndicator: true } }];
               });
               indicatorShown = true;
               indicatorShownAt = Date.now();
@@ -411,9 +430,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             setMessages(prev => {
               if (!prev.length) return prev;
               const last = prev[prev.length - 1];
-              if (last.sender === 'agent' && last.text.startsWith('Agent ') && last.metadata?.isIndicator) {
+              if (last.role === 'assistant' && last.content.startsWith('Agent ') && last.metadata?.isIndicator) {
                 const updated = [...prev];
-                updated[updated.length - 1] = { ...last, text: `Agent ${statusText.toLowerCase()}` } as any;
+                updated[updated.length - 1] = { ...last, content: `Agent ${statusText.toLowerCase()}` } as any;
                 return updated;
               }
               return prev;
@@ -425,19 +444,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setBusy(false);
           const resp = evt.data as ChatResponse;
           const agentMessage: Message = {
-            sender: 'agent',
-            text: resp.message,
-            category: resp.category,
+            id: Date.now().toString(), // Simple ID
+            role: "assistant",
+            content: resp.message,
+            timestamp: new Date(),
             metadata: {
-              isCached: resp.cached === true,
+              cached: resp.cached === true,
               model: resp.model,
               finishReason: resp.finishReason,
-              usage: resp.usage ? {
-                promptTokens: resp.usage.promptTokens,
-                completionTokens: resp.usage.completionTokens,
-                totalTokens: resp.usage.totalTokens
-              } : undefined,
-              timestamp: new Date()
+              promptTokens: resp.usage?.promptTokens,
+              completionTokens: resp.usage?.completionTokens,
+              totalTokens: resp.usage?.totalTokens,
             }
           };
           if (indicatorTimer !== undefined) {
@@ -445,7 +462,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             indicatorTimer = undefined;
           }
           const replaceFinal = () => setMessages(prev => {
-            if (prev.length && prev[prev.length - 1].sender === 'agent' && prev[prev.length - 1].text.startsWith('Agent ') && prev[prev.length - 1].metadata?.isIndicator) {
+            if (prev.length && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content.startsWith('Agent ') && prev[prev.length - 1].metadata?.isIndicator) {
               return [...prev.slice(0, -1), agentMessage];
             }
             return [...prev, agentMessage];
@@ -460,6 +477,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setConnectionStatus('online');
           setIsLoading(false);
           sendingRef.current = false;
+          activeRequestRef.current = null; // Clear active request
           if (!resp.cached) {
             startRateLimitCooldown();
           }
@@ -473,41 +491,67 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           // Mark done; handle rate limit or generic error; do not fallback
           done = true;
           const msg: string = (evt.data && evt.data.message) ? String(evt.data.message) : 'Error occurred';
+          const isConnectionError = evt.data && evt.data.isConnectionError;
+          
           if (indicatorTimer !== undefined) {
             clearTimeout(indicatorTimer);
             indicatorTimer = undefined;
           }
+          
           const prov = ((): string | null => { try { return localStorage.getItem('currentProviderId'); } catch { return null; }})();
+          
           if (msg.toLowerCase().includes('rate limit') && prov && prov.toLowerCase() === 'ollama') {
             setBusy(true, 'Model is busy (loading/unloading). Please wait...');
             setConnectionStatus('online');
           } else if (msg.toLowerCase().includes('rate limit')) {
             startRateLimitCooldown();
             const rateMsg: Message = {
-              sender: 'agent',
-              text: 'Rate limit exceeded. Please wait before sending another message.',
-              metadata: { timestamp: new Date(), isError: true }
+              id: Date.now().toString(), // Simple ID
+              role: "assistant",
+              content: 'Rate limit exceeded. Please wait before sending another message.',
+              timestamp: new Date(),
+              metadata: { isError: true }
             };
             setMessages(prev => prev.length ? [...prev.slice(0, -1), rateMsg] : [rateMsg]);
             setConnectionStatus('online');
+          } else if (isConnectionError) {
+            // Connection error - don't show as chat message, just update connection status
+            setConnectionStatus('offline');
+            console.log('SSE connection error detected, connection status set to offline');
           } else {
             // Print provider/OpenAI/Anthropic error message as its own chat message
             const errorMsg: Message = {
-              sender: 'agent',
-              text: msg,
-              metadata: { timestamp: new Date(), isError: true }
+              id: Date.now().toString(), // Simple ID
+              role: "assistant",
+              content: msg,
+              timestamp: new Date(),
+              metadata: { isError: true }
             };
             setMessages(prev => prev.length ? [...prev.slice(0, -1), errorMsg] : [errorMsg]);
           }
           setIsLoading(false);
           sendingRef.current = false;
+          activeRequestRef.current = null; // Clear active request
         }
       });
 
-      // Safety timeout in case stream stalls
+      // Get provider-specific timeout
+      const getTimeoutForProvider = (providerId: string) => {
+        switch (providerId.toLowerCase()) {
+          case 'ollama': return 30000; // 30 seconds for local models (loading/unloading)
+          case 'gemini': return 15000; // 15 seconds for remote providers
+          default: return 20000; // 20 seconds default
+        }
+      };
+      
+      const providerId = localStorage.getItem('currentProviderId') || 'gemini';
+      const timeoutMs = getTimeoutForProvider(providerId);
+      
+      // Safety timeout in case stream stalls - but only if no response received
       setTimeout(async () => {
-        if (!done) {
+        if (!done && activeRequestRef.current === text) { // Only proceed if this is still the active request
           try {
+            console.log(`SSE stream timed out after ${timeoutMs}ms, falling back to REST request`);
             const response: ChatResponse = await sendChatMessage({
               message: text,
               sessionId,
@@ -525,25 +569,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               })()
             });
             const agentMessage: Message = {
-              sender: 'agent',
-              text: response.message,
-              category: response.category,
+              id: Date.now().toString(), // Simple ID
+              role: "assistant",
+              content: response.message,
+              timestamp: new Date(),
               metadata: {
-                isCached: response.cached === true,
+                cached: response.cached === true,
                 model: response.model,
                 finishReason: response.finishReason,
-                usage: response.usage ? {
-                  promptTokens: response.usage.promptTokens,
-                  completionTokens: response.usage.completionTokens,
-                  totalTokens: response.usage.totalTokens
-                } : undefined,
-                timestamp: new Date()
+                promptTokens: response.usage?.promptTokens,
+                completionTokens: response.usage?.completionTokens,
+                totalTokens: response.usage?.totalTokens,
               }
             };
-            setMessages(prev => prev.length && prev[prev.length - 1].text.startsWith('Agent ') ? [...prev.slice(0, -1), agentMessage] : [...prev, agentMessage]);
+            setMessages(prev => prev.length && prev[prev.length - 1].content.startsWith('Agent ') ? [...prev.slice(0, -1), agentMessage] : [...prev, agentMessage]);
             setConnectionStatus('online');
             setBusy(false); // Clear busy on successful response
             setIsLoading(false);
+            activeRequestRef.current = null; // Clear active request
             try {
               const prov = localStorage.getItem('currentProviderId');
               if (!response.cached && (!prov || prov.toLowerCase() !== 'ollama')) {
@@ -561,7 +604,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             close();
           }
         }
-      }, 8000);
+      }, timeoutMs);
 
     } catch (error: any) {
       const apiError = error as ApiError;
@@ -572,35 +615,39 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (prov && prov.toLowerCase() === 'ollama') {
             setBusy(true, 'Model is busy (loading/unloading). Please wait...');
             setIsLoading(false);
+            activeRequestRef.current = null; // Clear active request
             return;
           }
         } catch {}
         startRateLimitCooldown();
         setMessages(prev => [...prev, {
-          sender: "agent",
-          text: "Rate limit exceeded. Please wait before sending another message.",
-          metadata: {
-            timestamp: new Date()
-          }
+          id: Date.now().toString(), // Simple ID
+          role: "assistant",
+          content: "Rate limit exceeded. Please wait before sending another message.",
+          timestamp: new Date(),
+          metadata: { isError: true }
         }]);
       } else if (apiError.isNetworkError) {
         setConnectionStatus('offline');
         setMessages(prev => [...prev, {
-          sender: "agent",
-          text: "Connection error. Please check your internet connection and try again.",
-          metadata: {
-            timestamp: new Date()
-          }
+          id: Date.now().toString(), // Simple ID
+          role: "assistant",
+          content: "Connection error. Please check your internet connection and try again.",
+          timestamp: new Date(),
+          metadata: { isError: true }
         }]);
       } else {
         setMessages(prev => [...prev, {
-          sender: "agent",
-          text: apiError.message || "Sorry, I encountered an error. Please try again.",
-          metadata: {
-            timestamp: new Date()
-          }
+          id: Date.now().toString(), // Simple ID
+          role: "assistant",
+          content: apiError.message || "Sorry, I encountered an error. Please try again.",
+          timestamp: new Date(),
+          metadata: { isError: true }
         }]);
       }
+      setIsLoading(false);
+      sendingRef.current = false;
+      activeRequestRef.current = null; // Clear active request
     }
   };
 
@@ -637,13 +684,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       isModelBusy,
       modelBusyText,
       connectionStatus,
-      cacheStats,
       isAdmin,
       sessionId,
       modelStatus,
       isModelLoading,
       isModelUnloading,
       isProviderBusy,
+      isBuiltInProviderBusy,
       importMemory,
       addUserMessage,
       sendToAgent,

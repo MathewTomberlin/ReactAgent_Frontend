@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAppContext } from './context/AppContext'
 import { useSettings } from './context/SettingsContext'
 import { CollapsibleGroup } from './components/CollapsibleGroup'
@@ -7,13 +7,80 @@ import { RagUploader } from './components/RagUploader'
 import { MemoryManagement } from './components/MemoryManagement'
 import { Tooltip } from './components/Tooltip'
 import { ModelSelection } from './components/ModelSelection'
-import { PromptTextarea } from './components/PromptTextarea'
 import { ChatSystemPrompts } from './components/ChatSystemPrompts'
-import { ConditionalTooltip } from './utils/uiUtils'
 import { initializeMobileViewport } from './utils/mobileViewport'
+import { ConditionalTooltip } from './utils/uiUtils'
+import { PromptTextarea } from './components/PromptTextarea'
+import { getProviders, type Provider } from './api/ProviderClient'
 
 
 import './App.css'
+
+// Error boundary component
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+    // Send error to a remote logging service or store locally
+    localStorage.setItem('mobile-error', JSON.stringify({
+      error: error.message,
+      stack: error.stack,
+      errorInfo,
+      timestamp: new Date().toISOString()
+    }));
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 max-w-4xl mx-auto">
+          <h2 className="text-red-600 font-bold text-xl mb-4">Something went wrong</h2>
+          
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+            <h3 className="text-gray-800 font-semibold mb-2">Error Details:</h3>
+            <div className="bg-white border border-gray-300 rounded p-3 mb-3">
+              <p className="text-red-600 font-medium">{this.state.error?.message}</p>
+            </div>
+            
+            {this.state.error?.stack && (
+              <div>
+                <h4 className="text-gray-700 font-medium mb-2">Stack Trace:</h4>
+                <div className="bg-gray-900 text-green-400 p-3 rounded border border-gray-600 max-h-96 overflow-y-auto font-mono text-xs">
+                  <pre className="whitespace-pre-wrap">{this.state.error.stack}</pre>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-center space-x-4">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+              Reload Page
+            </button>
+            <button 
+              onClick={() => this.setState({ hasError: false, error: null })} 
+              className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function App() {
   const {
@@ -31,7 +98,8 @@ function App() {
     retryLastMessage,
     isModelLoading,
     isModelUnloading,
-    isProviderBusy
+    isProviderBusy,
+    isBuiltInProviderBusy
   } = useAppContext();
   
   const { settings, updateSettings, updateTextSettings, updateTextSettingsImmediate } = useSettings();
@@ -41,6 +109,7 @@ function App() {
   const [input, setInput] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(288); // Default width (w-72 = 18rem = 288px)
   // Keyboard visibility is inferred via CSS classes; no React state needed
 
   // Removed unused refs after PromptTextarea introduction
@@ -51,6 +120,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
   const [modelConfig, setModelConfig] = useState<{ temperature: number; maxTokens: number; topP: number; [key: string]: any }>({ temperature: 0.7, maxTokens: 150, topP: 0.8 });
+  const [providers, setProviders] = useState<Provider[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,8 +141,13 @@ function App() {
 
   // Initialize mobile viewport handling
   useEffect(() => {
-    const cleanup = initializeMobileViewport();
-    return cleanup;
+    try {
+      const cleanup = initializeMobileViewport();
+      return cleanup;
+    } catch (error) {
+      console.warn('Error initializing mobile viewport:', error);
+      return () => {};
+    }
   }, []);
 
 
@@ -85,6 +160,25 @@ function App() {
   useEffect(() => {
     localStorage.setItem('currentModelId', selectedModel);
   }, [selectedModel]);
+
+  // Load providers from API
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const response = await getProviders();
+        setProviders(response.availableProviders || []);
+      } catch (error) {
+        console.error('Failed to load providers from API:', error);
+        // Fallback to only the built-in provider
+        const fallbackProviders: Provider[] = [
+          { id: 'gemini', name: 'Google Gemini', type: 'remote', available: true },
+        ];
+        setProviders(fallbackProviders);
+      }
+    };
+
+    loadProviders();
+  }, []);
 
   // No-op: mobileViewport sets body/html classes to reflect keyboard visibility
 
@@ -120,6 +214,42 @@ function App() {
     setShowMobileMenu(!showMobileMenu);
   };
 
+  // Sidebar resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    document.body.classList.add('sidebar-resizing');
+    
+    let currentWidth = sidebarWidth;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(200, Math.min(600, e.clientX)); // Min 200px, Max 600px
+      currentWidth = newWidth;
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('sidebar-resizing');
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      // Save width to localStorage
+      localStorage.setItem('sidebarWidth', currentWidth.toString());
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [sidebarWidth]);
+
+  // Load saved sidebar width on mount
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('sidebarWidth');
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10);
+      if (width >= 200 && width <= 600) {
+        setSidebarWidth(width);
+      }
+    }
+  }, []);
+
   // Lock body scroll when mobile menu is open to avoid background layout shifts affecting focus
   useEffect(() => {
     if (showMobileMenu) {
@@ -152,14 +282,91 @@ function App() {
     }
   };
 
+  // Get current provider and model display information
+  const getProviderModelDisplay = () => {
+    const providerId = selectedProvider;
+    const modelId = selectedModel;
+    
+    // If no provider selected, return empty
+    if (!providerId) {
+      return '';
+    }
+
+    // Get provider name from the providers list
+    const provider = providers?.find(p => p.id === providerId);
+    const providerName = provider?.name || providerId;
+    
+    // Check if provider needs API key and if it's provided
+    const isLocalProvider = provider?.type?.toLowerCase() === 'local';
+    const needsApiKey = providerId !== 'gemini' && !isLocalProvider;
+    const hasApiKey = apiKey && apiKey.trim() !== '';
+    
+    // If provider needs API key but none provided, show as unavailable
+    if (needsApiKey && !hasApiKey) {
+      return '';
+    }
+    
+    // For header display, show simplified provider names
+    let displayProviderName = providerName;
+    if (providerId === 'ollama') {
+      displayProviderName = 'Ollama';
+    } else if (providerId === 'gemini') {
+      displayProviderName = 'Built-In';
+    }
+    
+    // If no model selected, show just provider
+    if (!modelId) {
+      return displayProviderName;
+    }
+    
+    // Return formatted display: Provider: Model
+    return `${displayProviderName}: ${modelId}`;
+  };
+
+  // Helper function to render provider/model display with proper formatting and truncation
+  const renderProviderModelDisplay = () => {
+    const display = getProviderModelDisplay();
+    if (!display) return null;
+    
+    const colonIndex = display.indexOf(':');
+    if (colonIndex === -1) {
+      return <span className="font-bold truncate">{display}</span>;
+    }
+    
+    const provider = display.substring(0, colonIndex);
+    const model = display.substring(colonIndex + 1);
+    
+    // Truncate model name if it's too long
+    const truncatedModel = model.length > 30 ? `${model.substring(0, 30)}...` : model;
+    
+    return (
+      <>
+        <span className="font-bold">{provider}</span>
+        <span className="truncate">:{truncatedModel}</span>
+      </>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden md:relative">
 
       {/* Sidebar - Desktop */}
-      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0`}>
+      <div 
+        className={`${sidebarOpen ? '' : 'w-0'} hidden md:block transition-all duration-300 ease-in-out bg-white border-r border-gray-200 overflow-hidden flex-shrink-0 relative`}
+        style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
+      >
         <div className="h-full flex flex-col">
+          
+          {/* Resize Handle */}
+          {sidebarOpen && (
+            <div
+              className="sidebar-resize-handle"
+              onMouseDown={handleResizeStart}
+              title="Drag to resize sidebar"
+            />
+          )}
           {/* Header - Fixed */}
-          <div className="flex-shrink-0 p-4 w-72">
+          <div className="flex-shrink-0 p-4 sidebar-header">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
               <button
@@ -175,8 +382,8 @@ function App() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4 w-72 space-y-4">
+          <div className="flex-1 overflow-y-auto sidebar-container">
+            <div className="p-4 sidebar-content space-y-4">
               {/* Chat */}
               <CollapsibleGroup title="Chat" defaultExpanded={false} className="collapsible-group-top">
                 <div className="space-y-4">
@@ -361,7 +568,29 @@ function App() {
               </svg>
             </button>
             
-            <h1 className="text-xl font-semibold text-gray-800">AI Assistant</h1>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-semibold flex items-center">
+                <span className="font-sans font-black text-slate-900 tracking-wider leading-none uppercase">AGENT</span>
+                <span className="font-sans font-bold text-cyan-600 leading-none mx-1 italic transform -skew-x-6">AGENT</span>
+                <span className="font-mono font-black text-white bg-gradient-to-r from-indigo-600 to-purple-600 px-2 py-1 rounded-md leading-none flex items-center justify-center shadow-lg border border-indigo-400 ml-1" style={{ minHeight: '1.5rem' }}>AI</span>
+              </h1>
+              
+              {/* Provider/Model Display for Mobile */}
+              {getProviderModelDisplay() && (
+                <div className="text-sm text-gray-600 mt-1 md:hidden max-w-[200px] truncate">
+                  {renderProviderModelDisplay()}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Centered Provider/Model Display for Desktop */}
+          <div className="hidden md:flex items-center justify-center flex-1">
+            {getProviderModelDisplay() && (
+              <div className="text-sm text-gray-600 max-w-[300px] truncate">
+                {renderProviderModelDisplay()}
+              </div>
+            )}
           </div>
           
           <div className="flex items-center space-x-2">
@@ -384,17 +613,21 @@ function App() {
             
             {/* Loading Indicator */}
             {isLoading && (
-              <div className="flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded text-xs text-blue-700">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                <span>Typing...</span>
+              <div className="flex items-center space-x-1">
+                {/* Desktop: Full indicator with text */}
+                <div className="hidden sm:flex items-center space-x-1 bg-blue-100 px-2 py-1 rounded text-xs text-blue-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span>Typing...</span>
+                </div>
+                {/* Mobile: Just colored circle */}
+                <div className="sm:hidden w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               </div>
             )}
           </div>
         </div>
 
         {/* Mobile Menu */}
-        {showMobileMenu && (
-          <div className="md:hidden fixed inset-0 z-50 bg-white mobile-menu flex flex-col overflow-y-auto">
+        <div className={`md:hidden fixed inset-0 z-50 bg-white mobile-menu flex flex-col overflow-y-auto transition-transform duration-300 ${showMobileMenu ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="flex items-center justify-between py-2 px-4 flex-shrink-0">
               <h3 className="text-lg font-bold text-gray-800">Settings</h3>
               <button
@@ -422,8 +655,8 @@ function App() {
                             label="System Prompt"
                             value={settings.systemPrompt}
                             onChangeDebounced={(next) => updateTextSettings({ systemPrompt: next })}
-                            placeholder="You are a helpful AI assistant, respond to the user's messages with useful advice."
-                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="You are Agent Agent, a helpful AI assistant. Respond to the user's messages with useful advice."
+                            className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
                           />
                         </ConditionalTooltip>
                         <ConditionalTooltip content="A character or persona layer applied after the system prompt. Leave blank for none.">
@@ -432,8 +665,8 @@ function App() {
                               label="Character Prompt"
                               value={settings.characterPrompt || ''}
                               onChangeDebounced={(next) => updateTextSettings({ characterPrompt: next })}
-                              placeholder="You are a wise and intelligent software engineer and code reviewer."
-                              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="You are Agent Agent, a wise and intelligent software engineer and code reviewer."
+                              className="w-full h-24 p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
                             />
                             <div className="text-xs text-gray-500 mt-1">If set, it is appended after the System Prompt.</div>
                           </div>
@@ -469,7 +702,7 @@ function App() {
                               id="displayMessageModel-mobile"
                               checked={settings.displayMessageModel}
                               onChange={() => updateSettings({ displayMessageModel: !settings.displayMessageModel })}
-                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                              className="w-4 h-4 mt-0.5 text-blue-700 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
                             />
                             <label htmlFor="displayMessageModel-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
                               Display Message Model
@@ -484,7 +717,7 @@ function App() {
                               id="displayMessageTokens-mobile"
                               checked={settings.displayMessageTokens}
                               onChange={() => updateSettings({ displayMessageTokens: !settings.displayMessageTokens })}
-                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                              className="w-4 h-4 mt-0.5 text-blue-700 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
                             />
                             <label htmlFor="displayMessageTokens-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
                               Display Message Tokens
@@ -499,7 +732,7 @@ function App() {
                               id="displayTimestamp-mobile"
                               checked={settings.displayTimestamp}
                               onChange={() => updateSettings({ displayTimestamp: !settings.displayTimestamp })}
-                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                              className="w-4 h-4 mt-0.5 text-blue-700 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
                             />
                             <label htmlFor="displayTimestamp-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
                               Display Timestamp
@@ -514,7 +747,7 @@ function App() {
                               id="displayCachedIndicator-mobile"
                               checked={settings.displayCachedIndicator}
                               onChange={() => updateSettings({ displayCachedIndicator: !settings.displayCachedIndicator })}
-                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                              className="w-4 h-4 mt-0.5 text-blue-700 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
                             />
                             <label htmlFor="displayCachedIndicator-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
                               Display Cached Indicator
@@ -552,7 +785,7 @@ function App() {
                               id="unloadAfterCall-mobile"
                               checked={settings.unloadAfterCall}
                               onChange={() => updateSettings({ unloadAfterCall: !settings.unloadAfterCall })}
-                              className="w-4 h-4 mt-0.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                              className="w-4 h-4 mt-0.5 text-blue-700 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
                             />
                             <label htmlFor="unloadAfterCall-mobile" className="text-sm text-gray-700 cursor-pointer flex-1">
                               Unload After Call
@@ -579,7 +812,6 @@ function App() {
               </div>
             </div>
           </div>
-        )}
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 mobile-messages">
@@ -590,7 +822,7 @@ function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
                 <p className="text-lg font-medium">Start a conversation</p>
-                <p className="text-sm">Send a message to begin chatting with the AI assistant.</p>
+                <p className="text-sm">Send a message to begin chatting with Agent Agent.</p>
               </div>
             </div>
           ) : (
@@ -612,11 +844,11 @@ function App() {
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg ${
-                      msg.sender === 'user'
+                      msg.role === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
                         : (msg.metadata?.isIndicator
                             ? 'bg-gray-50 text-gray-600 border border-dashed border-gray-300 italic rounded-bl-none'
@@ -624,22 +856,15 @@ function App() {
                     }`}
                   >
                     <div className="flex items-center space-x-2">
-                      {msg.sender === 'agent' && (msg as any).category && (
-                        <span className={`${
-                          (msg as any).category === 'Knowledge' ? 'bg-purple-100 text-purple-700' :
-                          (msg as any).category === 'Request' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-700'
-                        } text-xs px-2 py-0.5 rounded-full`}>{(msg as any).category}</span>
-                      )}
-                      <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                      <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
                     </div>
                     
                     {/* Message Metadata */}
-                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.isCached)) && (
-                      <div className={`mt-2 text-xs ${msg.sender === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
+                    {msg.metadata && !msg.metadata.isIndicator && (settings.displayTimestamp || settings.displayMessageModel || settings.displayMessageTokens || (settings.displayCachedIndicator && msg.metadata.cached)) && (
+                      <div className={`mt-2 text-xs ${msg.role === 'user' ? 'text-blue-100' : (msg.metadata?.isError ? 'text-red-700' : 'text-gray-500')}`}>
                         <div className="flex items-center justify-between">
                           {settings.displayTimestamp && (
-                            <span>{formatTimestamp(msg.metadata.timestamp)}</span>
+                            <span>{formatTimestamp(msg.timestamp)}</span>
                           )}
                           {settings.displayMessageModel && msg.metadata.model && (
                             <span className="ml-2 px-1 py-0.5 bg-gray-200 rounded text-gray-600">
@@ -647,14 +872,14 @@ function App() {
                             </span>
                           )}
                           {/* Provider errors are now separate messages; no inline badges */}
-                          {settings.displayCachedIndicator && msg.metadata.isCached && msg.sender === 'agent' && (
+                          {settings.displayCachedIndicator && msg.metadata.cached && msg.role === 'assistant' && (
                             <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
                           )}
                         </div>
-                        {settings.displayMessageTokens && msg.sender === 'agent' && !(settings.displayCachedIndicator && msg.metadata.isCached) && (
-                          msg.metadata.usage ? (
+                        {settings.displayMessageTokens && msg.role === 'assistant' && !(settings.displayCachedIndicator && msg.metadata.cached) && (
+                          msg.metadata.promptTokens ? (
                             <div className="mt-1 text-xs opacity-75">
-                              Input: {msg.metadata.usage.promptTokens} | Output: {msg.metadata.usage.completionTokens} | Total: {msg.metadata.usage.totalTokens}
+                              Input: {msg.metadata.promptTokens} | Output: {msg.metadata.completionTokens} | Total: {msg.metadata.totalTokens}
                             </div>
                           ) : (
                             <div className="mt-1 text-xs opacity-75 text-gray-500">
@@ -677,7 +902,7 @@ function App() {
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                       </div>
-                      <span className="text-sm text-gray-500">AI is thinking...</span>
+                      <span className="text-sm text-gray-500">Agent Agent is thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -699,15 +924,16 @@ function App() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={
-                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isRateLimited && selectedProvider === 'gemini') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
                   (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  (isBuiltInProviderBusy && selectedProvider === 'gemini') ? 'Built-In model is busy (global rate limit)...' :
                   isModelLoading ? 'Loading model...' :
                   isModelUnloading ? 'Unloading model...' :
                   isProviderBusy ? 'Model is busy...' :
                   "Type your message..."
                 }
-                className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
+                className="hidden md:block w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy || (isBuiltInProviderBusy && selectedProvider === 'gemini')}
               />
               
               {/* Mobile Textarea */}
@@ -717,35 +943,44 @@ function App() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={
-                  (isRateLimited && selectedProvider !== 'ollama') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
+                  (isRateLimited && selectedProvider === 'gemini') ? `Rate limited. Wait ${rateLimitCooldown}s...` :
                   (isModelBusy && selectedProvider === 'ollama') ? (modelBusyText || 'Model is busy...') :
+                  (isBuiltInProviderBusy && selectedProvider === 'gemini') ? 'Built-In model is busy (global rate limit)...' :
                   isModelLoading ? 'Loading model...' :
                   isModelUnloading ? 'Unloading model...' :
                   isProviderBusy ? 'Model is busy...' :
                   "Type your message..."
                 }
-                className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                className="md:hidden w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 rows={1}
-                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy}
+                disabled={isModelBusy && selectedProvider === 'ollama' || isModelLoading || isModelUnloading || isProviderBusy || (isBuiltInProviderBusy && selectedProvider === 'gemini')}
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
             
             <button
               onClick={handleSubmit}
-              disabled={isLoading || ((isRateLimited && selectedProvider !== 'ollama')) || (isModelBusy && selectedProvider === 'ollama') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === ""}
-              className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex-shrink-0"
+              disabled={isLoading || ((isRateLimited && selectedProvider === 'gemini')) || (isModelBusy && selectedProvider === 'ollama') || (isBuiltInProviderBusy && selectedProvider === 'gemini') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === ""}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:bg-gray-400 disabled:hover:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex-shrink-0 min-w-[60px] active:scale-95"
               type="button"
               title="Send message"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              {isLoading || ((isRateLimited && selectedProvider === 'gemini')) || (isModelBusy && selectedProvider === 'ollama') || (isBuiltInProviderBusy && selectedProvider === 'gemini') || isModelLoading || isModelUnloading || isProviderBusy || input.trim() === "" ? (
+                // Caution triangle icon when disabled
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              ) : (
+                // Right-facing arrow when active
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              )}
             </button>
           </div>
           
           {/* Rate Limit / Busy Warning */}
-          {isRateLimited && selectedProvider !== 'ollama' && (
+          {isRateLimited && selectedProvider === 'gemini' && (
             <div className="mt-2 text-xs text-red-600 text-center">
               Rate limit active. You can send 1 message per minute.
             </div>
@@ -755,10 +990,23 @@ function App() {
               {modelBusyText || 'Model is busy (loading/unloading). Please wait...'}
             </div>
           )}
+          {isBuiltInProviderBusy && selectedProvider === 'gemini' && (
+            <div className="mt-2 text-xs text-orange-600 text-center">
+              Built-In model is busy due to global rate limit. Please try again shortly.
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-export default App
+function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+export default AppWithErrorBoundary

@@ -104,9 +104,13 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
         const response = await getProviderModels(selectedProvider);
         setModels(response.models);
 
-        // Auto-select first model if none selected
-        if (!selectedModel && response.models.length > 0) {
-          onModelChange(response.models[0].id);
+        // Auto-select first model if none selected or if switching providers
+        if (response.models.length > 0) {
+          // If no model is selected, or if the current model is not in the new list, select the first one
+          const currentModelExists = selectedModel && response.models.some(m => m.id === selectedModel);
+          if (!currentModelExists) {
+            onModelChange(response.models[0].id);
+          }
         }
       } catch (error) {
         console.error('Failed to load models:', error);
@@ -282,83 +286,36 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
 
   return (
     <div className="space-y-4">
-      {/* Provider Selection */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Provider</label>
-        <ConditionalTooltip content="Select the AI provider you want to use. Local providers are only available when running locally.">
-          <select
-            value={selectedProvider}
-            onChange={(e) => onProviderChange(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="gemini">Built-In (Google Gemini)</option>
-            {providers?.filter(p => p.id !== 'gemini' && p.available).map(provider => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            )) || []}
-            {providers?.filter(p => p.id !== 'gemini' && !p.available).map(provider => (
-              <option key={provider.id} value={provider.id} disabled>
-                {provider.name} (Not Available)
-              </option>
-            )) || []}
-          </select>
-        </ConditionalTooltip>
-      </div>
+      {/* Provider Subgroup */}
+      <CollapsibleGroup title="Provider" defaultExpanded={true} className="collapsible-group-nested">
+        <div className="space-y-4">
+          {/* Provider Selection */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Provider</label>
+            <ConditionalTooltip content="Select the AI provider you want to use. Local providers are only available when running locally.">
+              <select
+                value={selectedProvider}
+                onChange={(e) => onProviderChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="gemini">Built-In (Google Gemini)</option>
+                {providers?.filter(p => p.id !== 'gemini' && p.available).map(provider => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                )) || []}
+                {providers?.filter(p => p.id !== 'gemini' && !p.available).map(provider => (
+                  <option key={provider.id} value={provider.id} disabled>
+                    {provider.name} (Not Available)
+                  </option>
+                )) || []}
+              </select>
+            </ConditionalTooltip>
+          </div>
 
-      {/* Model Selection */}
-      {selectedProvider && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Model</label>
-          <ConditionalTooltip content="Select the specific model to use from the selected provider.">
-            <select
-              value={selectedModel}
-              onChange={(e) => onModelChange(e.target.value)}
-              disabled={loading || (needsApiKey && (!apiKey || apiKey.trim() === ''))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-            >
-              {loading ? (
-                <option value="">Loading models...</option>
-              ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
-                <option value="">Enter API Key to select model</option>
-              ) : models.length === 0 ? (
-                <option value="">No models available</option>
-              ) : (
-                <>
-                  <option value="">Select Model</option>
-                  {models.map(model => (
-                    <option key={model.id} value={model.id}>
-                      {model.name} - {model.description}
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-          </ConditionalTooltip>
-        </div>
-      )}
-
-      {/* Configuration */}
-      {needsApiKey && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">API Key</label>
-          <ConditionalTooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => onApiKeyChange(e.target.value)}
-              placeholder={`Enter ${selectedProviderInfo?.name} API key`}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            />
-          </ConditionalTooltip>
-        </div>
-      )}
-
-      {/* Local Provider Configuration */}
-      {selectedProvider && isLocalProvider && selectedProvider !== 'gemini' && (
-        <div className="space-y-2">
-          {isLocalProvider ? (
-            <>
+          {/* Provider URL - for local providers */}
+          {selectedProvider && isLocalProvider && selectedProvider !== 'gemini' && (
+            <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Provider URL</label>
               <ConditionalTooltip content="The URL where your local LLM server is running.">
                 <input
@@ -374,9 +331,12 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                   Default Ollama installation runs on http://localhost:11434
                 </p>
               )}
-            </>
-          ) : (
-            <>
+            </div>
+          )}
+
+          {/* API Key Configuration - for remote providers */}
+          {needsApiKey && (
+            <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">API Key</label>
               <ConditionalTooltip content="Your API key for the selected provider. This will be stored securely and only used for your requests.">
                 <input
@@ -387,17 +347,50 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
               </ConditionalTooltip>
-            </>
+            </div>
+          )}
+
+          {/* Model Selection */}
+          {selectedProvider && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Model</label>
+              <ConditionalTooltip content="Select the specific model to use from the selected provider.">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => onModelChange(e.target.value)}
+                  disabled={loading || (needsApiKey && (!apiKey || apiKey.trim() === ''))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                >
+                  {loading ? (
+                    <option value="">Loading models...</option>
+                  ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
+                    <option value="">Enter API Key to select model</option>
+                  ) : models.length === 0 ? (
+                    <option value="">No models available</option>
+                  ) : (
+                    <>
+                      <option value="">Select Model</option>
+                      {models.map(model => (
+                        <option key={model.id} value={model.id}>
+                          {model.name} - {model.description}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </ConditionalTooltip>
+            </div>
           )}
         </div>
-      )}
+      </CollapsibleGroup>
+
+
 
       {/* Built-in provider notice */}
       {selectedProvider === 'gemini' && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
           <p className="text-sm text-blue-700">
-            <strong>Built-in Provider:</strong> Google Gemini is available without additional configuration.
-            It uses your project's Vertex AI configuration.
+            <strong>Built-in Provider:</strong> Google Gemini is available without API key or additional configuration in limited rates.
           </p>
         </div>
       )}
