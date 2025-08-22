@@ -68,12 +68,42 @@
   .sidebar-transitioning .sidebar-container *,
   .sidebar-transitioning .sidebar-content *,
   .sidebar-transitioning .sidebar-header * {
-    white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     min-width: 0 !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  /* Only apply white-space: nowrap to specific elements that need it */
+  .sidebar-transitioning .sidebar-container button,
+  .sidebar-transitioning .sidebar-content button,
+  .sidebar-transitioning .sidebar-header button,
+  .sidebar-transitioning .sidebar-container input,
+  .sidebar-transitioning .sidebar-content input,
+  .sidebar-transitioning .sidebar-header input,
+  .sidebar-transitioning .sidebar-container select,
+  .sidebar-transitioning .sidebar-content select,
+  .sidebar-transitioning .sidebar-header select {
+    white-space: nowrap !important;
+  }
+
+  /* Allow normal text wrapping for labels and text content */
+  .sidebar-transitioning .sidebar-container label,
+  .sidebar-transitioning .sidebar-content label,
+  .sidebar-transitioning .sidebar-header label,
+  .sidebar-transitioning .sidebar-container span,
+  .sidebar-transitioning .sidebar-content span,
+  .sidebar-transitioning .sidebar-header span,
+  .sidebar-transitioning .sidebar-container div,
+  .sidebar-transitioning .sidebar-content div,
+  .sidebar-transitioning .sidebar-header div,
+  .sidebar-transitioning .sidebar-container p,
+  .sidebar-transitioning .sidebar-content p,
+  .sidebar-transitioning .sidebar-header p {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
   }
   
   /* Ensure sidebar content doesn't overflow horizontally */
@@ -113,6 +143,16 @@
     max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  /* Exception for checkbox inputs - they should maintain their natural size for flexbox layouts */
+  .sidebar-content input[type="checkbox"],
+  .sidebar-content input[type="radio"],
+  .sidebar-header input[type="checkbox"],
+  .sidebar-header input[type="radio"] {
+    width: auto !important;
+    max-width: none !important;
+    flex-shrink: 0 !important;
   }
 
   /* Exception for desktop sidebar close button */
