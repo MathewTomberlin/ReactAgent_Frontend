@@ -1,98 +1,49 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
   content: string | React.ReactNode;
   children: React.ReactElement;
   position?: 'top' | 'bottom' | 'left' | 'right';
+  delay?: number;
+  maxWidth?: number;
 }
 
 export const Tooltip: React.FC<TooltipProps> = React.memo(({
   content,
   children,
   position = 'top',
+  delay = 300,
+  maxWidth = 250,
 }) => {
-  // Mobile detection with window resize listener
-  const [isMobileDevice, setIsMobileDevice] = useState(false);
-  
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobileDevice(typeof window !== 'undefined' && window.innerWidth <= 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-    };
-  }, []);
-
   const [isVisible, setIsVisible] = useState(false);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+  const [isPositioned, setIsPositioned] = useState(false);
+  
   const triggerRef = useRef<HTMLElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const hideTimeoutRef = useRef<number | null>(null);
   const showTimeoutRef = useRef<number | null>(null);
+  const hideTimeoutRef = useRef<number | null>(null);
+  const positionTimeoutRef = useRef<number | null>(null);
 
-  const calculatePosition = () => {
-    if (!triggerRef.current) return {};
-
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Use estimated dimensions for initial positioning
-    const tooltipWidth = 200;
-    const tooltipHeight = 60;
-    const offset = 8;
-
-    let top: number;
-    let left: number;
-
-    switch (position) {
-      case 'top':
-        top = triggerRect.top - tooltipHeight - offset;
-        left = triggerRect.left + (triggerRect.width - tooltipWidth) / 2;
-        break;
-      case 'bottom':
-        top = triggerRect.bottom + offset;
-        left = triggerRect.left + (triggerRect.width - tooltipWidth) / 2;
-        break;
-      case 'left':
-        top = triggerRect.top + (triggerRect.height - tooltipHeight) / 2;
-        left = triggerRect.left - tooltipWidth - offset;
-        break;
-      case 'right':
-        top = triggerRect.top + (triggerRect.height - tooltipHeight) / 2;
-        left = triggerRect.right + offset;
-        break;
-      default:
-        top = triggerRect.top - tooltipHeight - offset;
-        left = triggerRect.left + (triggerRect.width - tooltipWidth) / 2;
+  // Clear all timeouts
+  const clearAllTimeouts = useCallback(() => {
+    if (showTimeoutRef.current) {
+      clearTimeout(showTimeoutRef.current);
+      showTimeoutRef.current = null;
     }
-
-    // Ensure tooltip stays within viewport
-    const padding = 8;
-    if (left < padding) left = padding;
-    if (left + tooltipWidth > viewportWidth - padding) {
-      left = viewportWidth - tooltipWidth - padding;
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
     }
-    if (top < padding) top = padding;
-    if (top + tooltipHeight > viewportHeight - padding) {
-      top = viewportHeight - tooltipHeight - padding;
+    if (positionTimeoutRef.current) {
+      clearTimeout(positionTimeoutRef.current);
+      positionTimeoutRef.current = null;
     }
+  }, []);
 
-    return {
-      position: 'fixed' as const,
-      top: `${Math.max(padding, top)}px`,
-      left: `${Math.max(padding, left)}px`,
-      zIndex: 9999,
-      visibility: 'hidden' as const, // Hide initially to measure
-    };
-  };
-
-  const updatePositionWithActualDimensions = () => {
+  // Calculate tooltip position
+  const calculatePosition = useCallback(() => {
     if (!triggerRef.current || !tooltipRef.current) return;
 
     const triggerRect = triggerRef.current.getBoundingClientRect();
@@ -102,7 +53,8 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     
     const tooltipWidth = tooltipRect.width;
     const tooltipHeight = tooltipRect.height;
-    const offset = 8;
+    const offset = 12;
+    const padding = 16;
 
     let top: number;
     let left: number;
@@ -129,8 +81,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
         left = triggerRect.left + (triggerRect.width - tooltipWidth) / 2;
     }
 
-    // Ensure tooltip stays within viewport
-    const padding = 8;
+    // Ensure tooltip stays within viewport bounds
     if (left < padding) left = padding;
     if (left + tooltipWidth > viewportWidth - padding) {
       left = viewportWidth - tooltipWidth - padding;
@@ -145,76 +96,111 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
       top: `${Math.max(padding, top)}px`,
       left: `${Math.max(padding, left)}px`,
       zIndex: 9999,
-      visibility: 'visible' as const,
+      opacity: 1,
+      transform: 'scale(1)',
+      transition: 'opacity 0.2s ease-in-out, transform 0.2s ease-in-out',
     });
-  };
-
-  const showTooltip = () => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
     
-    // Increased delay to 2 seconds as requested
-    showTimeoutRef.current = setTimeout(() => {
-      const initialPositionStyle = calculatePosition();
-      setTooltipStyle(initialPositionStyle);
-      setIsVisible(true);
-      
-      // Update position with actual dimensions after rendering
-      requestAnimationFrame(() => {
-        updatePositionWithActualDimensions();
-      });
-    }, 2000);
-  };
+    setIsPositioned(true);
+  }, [position]);
 
-  const hideTooltip = () => {
-    if (showTimeoutRef.current) {
-      clearTimeout(showTimeoutRef.current);
-      showTimeoutRef.current = null;
-    }
+  // Show tooltip with delay
+  const showTooltip = useCallback(() => {
+    clearAllTimeouts();
+    
+    showTimeoutRef.current = setTimeout(() => {
+      setIsVisible(true);
+      setIsPositioned(false);
+      
+      // Position tooltip after it's rendered
+      positionTimeoutRef.current = setTimeout(() => {
+        calculatePosition();
+      }, 10);
+    }, delay);
+  }, [delay, calculatePosition, clearAllTimeouts]);
+
+  // Hide tooltip
+  const hideTooltip = useCallback(() => {
+    clearAllTimeouts();
     
     hideTimeoutRef.current = setTimeout(() => {
       setIsVisible(false);
-    }, 100);
-  };
+      setIsPositioned(false);
+      setTooltipStyle(prev => ({
+        ...prev,
+        opacity: 0,
+        transform: 'scale(0.95)',
+      }));
+    }, 150);
+  }, [clearAllTimeouts]);
 
-  const handleTooltipMouseEnter = () => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-  };
+  // Handle mouse enter on trigger
+  const handleTriggerMouseEnter = useCallback(() => {
+    showTooltip();
+  }, [showTooltip]);
 
-  const handleTooltipMouseLeave = () => {
+  // Handle mouse leave on trigger
+  const handleTriggerMouseLeave = useCallback(() => {
     hideTooltip();
-  };
+  }, [hideTooltip]);
 
-  // Cleanup timeouts on unmount
+  // Handle mouse enter on tooltip (keep it visible)
+  const handleTooltipMouseEnter = useCallback(() => {
+    clearAllTimeouts();
+  }, [clearAllTimeouts]);
+
+  // Handle mouse leave on tooltip
+  const handleTooltipMouseLeave = useCallback(() => {
+    hideTooltip();
+  }, [hideTooltip]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-      if (showTimeoutRef.current) {
-        clearTimeout(showTimeoutRef.current);
-      }
+      clearAllTimeouts();
     };
-  }, []);
+  }, [clearAllTimeouts]);
 
   // Clone the child element to add event handlers and ref
   const triggerElement = React.cloneElement(children as React.ReactElement<any>, {
     ref: triggerRef,
-    onMouseEnter: showTooltip,
-    onMouseLeave: hideTooltip,
-    onFocus: showTooltip,
-    onBlur: hideTooltip,
+    onMouseEnter: handleTriggerMouseEnter,
+    onMouseLeave: handleTriggerMouseLeave,
+    onFocus: handleTriggerMouseEnter,
+    onBlur: handleTriggerMouseLeave,
   });
 
-  // On mobile, avoid wrapping elements to prevent focus issues
-  if (isMobileDevice) {
-    return <>{children}</>;
-  }
+  // Get arrow position class
+  const getArrowPositionClass = () => {
+    switch (position) {
+      case 'top':
+        return 'top-full left-1/2 -translate-x-1/2';
+      case 'bottom':
+        return 'bottom-full left-1/2 -translate-x-1/2';
+      case 'left':
+        return 'left-full top-1/2 -translate-y-1/2';
+      case 'right':
+        return 'right-full top-1/2 -translate-y-1/2';
+      default:
+        return 'top-full left-1/2 -translate-x-1/2';
+    }
+  };
+
+  // Get arrow offset styles for proper spacing
+  const getArrowOffsetStyles = () => {
+    switch (position) {
+      case 'top':
+        return { marginTop: '-4px' };
+      case 'bottom':
+        return { marginBottom: '-4px' };
+      case 'left':
+        return { marginLeft: '-4px' };
+      case 'right':
+        return { marginRight: '-4px' };
+      default:
+        return { marginTop: '-4px' };
+    }
+  };
 
   return (
     <>
@@ -222,20 +208,30 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
       {isVisible && typeof document !== 'undefined' && createPortal(
         <div
           ref={tooltipRef}
-          className="px-3 py-2 text-sm text-white bg-gray-900 rounded-lg shadow-lg max-w-xs"
-          style={tooltipStyle}
+          className="px-4 py-3 text-sm text-white bg-gray-800 rounded-xl shadow-2xl border border-gray-700 max-w-xs backdrop-blur-sm relative"
+          style={{
+            ...tooltipStyle,
+            maxWidth: `${maxWidth}px`,
+            opacity: isPositioned ? 1 : 0,
+            transform: isPositioned ? 'scale(1)' : 'scale(0.95)',
+          }}
           onMouseEnter={handleTooltipMouseEnter}
           onMouseLeave={handleTooltipMouseLeave}
         >
           {content}
+          {/* Arrow */}
           <div
-            className={`absolute w-2 h-2 bg-gray-900 transform rotate-45 ${
-              position === 'top' ? 'top-full left-1/2 -translate-x-1/2 -translate-y-1/2' :
-              position === 'bottom' ? 'bottom-full left-1/2 -translate-x-1/2 translate-y-1/2' :
-              position === 'left' ? 'left-full top-1/2 -translate-x-1/2 -translate-y-1/2' :
-              position === 'right' ? 'right-full top-1/2 translate-x-1/2 -translate-y-1/2' :
-              'top-full left-1/2 -translate-x-1/2 -translate-y-1/2'
-            }`}
+            className={`absolute w-3 h-3 bg-gray-800 border border-gray-700 transform rotate-45 ${getArrowPositionClass()}`}
+            style={{
+              borderStyle: 'solid',
+              borderWidth: '1px',
+              borderColor: 'transparent',
+              borderTopColor: position === 'bottom' ? '#374151' : 'transparent',
+              borderBottomColor: position === 'top' ? '#374151' : 'transparent',
+              borderLeftColor: position === 'right' ? '#374151' : 'transparent',
+              borderRightColor: position === 'left' ? '#374151' : 'transparent',
+              ...getArrowOffsetStyles(),
+            }}
           />
         </div>,
         document.body

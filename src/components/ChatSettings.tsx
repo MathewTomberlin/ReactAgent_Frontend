@@ -1,12 +1,6 @@
 import { useSettings } from '../context/SettingsContext';
 import { Tooltip } from './Tooltip';
-import { useIsMobile } from '../utils/uiUtils';
-
-// Conditional Tooltip component that only shows on desktop
-const ConditionalTooltip: React.FC<{ content: string; children: React.ReactNode }> = ({ content, children }) => {
-  const isMobileDevice = useIsMobile();
-  return isMobileDevice ? <>{children}</> : <Tooltip content={content}>{children as React.ReactElement}</Tooltip>;
-};
+import { ConditionalTooltip } from '../utils/uiUtils';
 
 export const ChatSettings = () => {
   const { settings, updateSettings } = useSettings();
