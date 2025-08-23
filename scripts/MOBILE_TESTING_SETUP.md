@@ -1,7 +1,7 @@
 # Mobile Testing Setup Guide
 
 ## Overview
-This guide provides a complete setup for testing the React Agent application on mobile devices using your local network.
+This guide provides a complete setup for testing the Agent Agent AI application on mobile devices using your local network.
 
 ## Prerequisites
 - Both frontend and backend code are up to date

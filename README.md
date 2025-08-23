@@ -1,6 +1,6 @@
-# React Agent Frontend
+# Agent Agent AI Frontend
 
-A modern React TypeScript frontend for the AI Assistant application, built with Vite and Tailwind CSS.
+A modern React TypeScript frontend for the Agent Agent AI platform, built with Vite and Tailwind CSS.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ A modern React TypeScript frontend for the AI Assistant application, built with 
 ## Project Structure
 
 ```
-reactagent-frontend/
+agent-agent-ai-frontend/
 ├── scripts/          # Shell scripts for development and deployment
 │   ├── setup.sh      # Initial project setup
 │   ├── test-frontend.sh  # Start development server
@@ -74,7 +74,7 @@ This project uses:
 
 The frontend is deployed to Google Cloud Storage with separate staging and production environments:
 
-- **Staging**: `https://storage.googleapis.com/reactagent-frontend-staging-1755407769/index.html`
-- **Production**: `https://storage.googleapis.com/reactagent-frontend-prod-1755407790/index.html`
+- **Staging**: `https://storage.googleapis.com/agent-agent-ai-frontend-staging-1755407769/index.html`
+- **Production**: `https://storage.googleapis.com/agent-agent-ai-frontend-prod-1755407790/index.html`
 
 For detailed information, see `docs/SCRIPTS.md`.

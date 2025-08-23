@@ -895,17 +895,14 @@ function App() {
                             <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded">Cached</span>
                           )}
                         </div>
-                        {settings.displayMessageTokens && msg.role === 'assistant' && !(settings.displayCachedIndicator && msg.metadata.cached) && (
-                          msg.metadata.promptTokens ? (
-                            <div className="mt-1 text-xs opacity-75">
-                              Input: {msg.metadata.promptTokens} | Output: {msg.metadata.completionTokens} | Total: {msg.metadata.totalTokens}
-                            </div>
-                          ) : (
-                            <div className="mt-1 text-xs opacity-75 text-gray-500">
-                              No token data available
-                            </div>
-                          )
+                        {/* Token usage display - show when tokens are available and setting is enabled */}
+                        {settings.displayMessageTokens && msg.role === 'assistant' && msg.metadata.promptTokens && msg.metadata.promptTokens > 0 && (
+                          <div className="mt-1 text-xs opacity-75">
+                            Input: {msg.metadata.promptTokens} | Output: {msg.metadata.completionTokens} | Total: {msg.metadata.totalTokens}
+                          </div>
                         )}
+
+
                       </div>
                     )}
                   </div>
