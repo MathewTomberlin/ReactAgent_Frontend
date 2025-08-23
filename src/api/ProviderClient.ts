@@ -124,7 +124,8 @@ export async function saveProviderConfig(config: {
   baseUrl?: string;
   parameters?: ModelConfig;
 }): Promise<{ message: string }> {
-  const response = await fetch(`${API_BASE}/api/providers/config`, {
+  // Use the public endpoint for basic configuration (API key, base URL)
+  const response = await fetch(`${API_BASE}/api/providers/basic-config`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

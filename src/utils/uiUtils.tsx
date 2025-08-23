@@ -33,15 +33,33 @@ export const useIsMobile = () => {
 
 /**
  * Conditional Tooltip component that only shows on desktop
- * Optimized to prevent unnecessary re-renders
+ * Optimized to prevent unnecessary re-renders and works with new Tooltip implementation
  */
 export const ConditionalTooltip: React.FC<{
   content: string | React.ReactNode;
   children: React.ReactNode;
   position?: "top" | "bottom" | "left" | "right";
-}> = React.memo(({ content, children, position }) => {
+  delay?: number;
+  maxWidth?: number;
+}> = React.memo(({ content, children, position, delay, maxWidth }) => {
   const isMobileDevice = useIsMobile();
-  return isMobileDevice ? <>{children}</> : <Tooltip content={content} position={position}>{children as React.ReactElement}</Tooltip>;
+  
+  // On mobile, just render children without tooltip wrapper
+  if (isMobileDevice) {
+    return <>{children}</>;
+  }
+  
+  // On desktop, render with tooltip
+  return (
+    <Tooltip 
+      content={content} 
+      position={position} 
+      delay={delay}
+      maxWidth={maxWidth}
+    >
+      {children as React.ReactElement}
+    </Tooltip>
+  );
 });
 
 ConditionalTooltip.displayName = 'ConditionalTooltip';
