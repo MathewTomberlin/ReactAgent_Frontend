@@ -49,7 +49,7 @@ export const CollapsibleGroup = ({
       </button>
       <div
         className={`p-3 border border-gray-200 rounded-b ${contentBgClass}`}
-        style={{ display: isExpanded ? 'block' : 'none', contain: 'content' }}
+        style={{ display: isExpanded ? 'block' : 'none' }}
         aria-hidden={!isExpanded}
       >
         {children}

@@ -176,3 +176,43 @@ export async function getCurrentProvider(): Promise<{ providerId: string; modelI
   }
   return response.json();
 }
+
+/**
+ * Validate API key for a specific provider
+ */
+export async function validateApiKey(providerId: string, apiKey: string): Promise<{ valid: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/api/providers/validate-api-key`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ providerId, apiKey }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to validate API key');
+  }
+  return response.json();
+}
+
+/**
+ * Force local environment detection (for debugging/testing)
+ */
+export async function forceLocalEnvironment(forceLocal: boolean): Promise<{
+  message: string;
+  forceLocal: boolean;
+  isLocal: boolean;
+}> {
+  const response = await fetch(`${API_BASE}/api/providers/environment/force-local`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ forceLocal }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to force local environment');
+  }
+
+  return response.json();
+}
