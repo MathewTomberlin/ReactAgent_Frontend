@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ConditionalTooltip } from '../utils/uiUtils';
 import { CollapsibleGroup } from './CollapsibleGroup';
 import {
@@ -8,12 +8,11 @@ import {
   getCurrentProvider,
   saveProviderConfig,
   getModelConfig,
+  validateApiKey,
   type Provider,
   type Model,
   type ModelConfig
 } from '../api/ProviderClient';
-
-
 
 interface ModelSelectionProps {
   selectedProvider: string;
@@ -43,15 +42,51 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
   const [providers, setProviders] = useState<Provider[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(false);
+  const loadingInProgress = useRef(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [supportedParameters, setSupportedParameters] = useState<any[]>([]);
+  const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null);
+  const [validatingApiKey, setValidatingApiKey] = useState(false);
+  const [isLocalEnvironment, setIsLocalEnvironment] = useState(false);
+  const [providerTypeFilter, setProviderTypeFilter] = useState<'remote' | 'local'>('remote');
 
   // Load providers from API
   useEffect(() => {
+    // Prevent multiple executions of this effect
+    if (loadingInProgress.current) {
+      return;
+    }
+    
     const loadProviders = async () => {
+      // Prevent multiple simultaneous loading operations
+      if (loadingInProgress.current) {
+        return;
+      }
+      
+      loadingInProgress.current = true;
+      
       try {
         setLoading(true);
+        const startTime = Date.now();
+        
         const response = await getProviders();
         setProviders(response.availableProviders || []);
+        setIsLocalEnvironment(response.isLocal || false);
+        
+        // If running in cloud, default to remote providers only
+        if (!response.isLocal) {
+          setProviderTypeFilter('remote');
+        }
+        
+        // Ensure loading shows for at least 500ms so users can see the overlay
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, 500 - elapsed);
+        
+        setTimeout(() => {
+          setLoading(false);
+          loadingInProgress.current = false;
+        }, remaining);
+        
       } catch (error) {
         console.error('Failed to load providers from API:', error);
         // Fallback to only the built-in provider
@@ -60,23 +95,120 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
         ];
 
         setProviders(fallbackProviders);
-      } finally {
-        setLoading(false);
+        setIsLocalEnvironment(false);
+        setProviderTypeFilter('remote');
+        
+        // Ensure loading shows for at least 500ms even on error
+        setTimeout(() => {
+          setLoading(false);
+          loadingInProgress.current = false;
+        }, 500);
       }
     };
 
     loadProviders();
   }, []);
 
+  // Filter providers based on selected type
+  const filteredProviders = useMemo(() => {
+    if (!isLocalEnvironment) {
+      // In cloud environment, only show remote providers
+      return providers.filter(p => p.type === 'remote');
+    }
+    
+    // In local environment, filter based on selected type
+    if (providerTypeFilter === 'local') {
+      // For local, only show actual local providers (exclude Built-In)
+      return providers.filter(p => p.type === 'local');
+    } else {
+      // For remote, show all remote providers (including Built-In)
+      return providers.filter(p => p.type === 'remote');
+    }
+  }, [providers, providerTypeFilter, isLocalEnvironment]);
+
   // Calculate provider info - memoized to prevent recalculation on every render
   const providerInfo = useMemo(() => {
     const selectedProviderInfo = providers?.find(p => p.id === selectedProvider);
+    // Built-In (gemini) is always treated as remote, not local
     const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
     const needsApiKey: boolean = !!(selectedProvider && !isLocalProvider && selectedProvider !== 'gemini');
     return { selectedProviderInfo, isLocalProvider, needsApiKey };
   }, [providers, selectedProvider]);
 
   const { selectedProviderInfo, isLocalProvider, needsApiKey } = providerInfo;
+
+
+
+  // Handle provider type filter change
+  const handleProviderTypeChange = (type: 'remote' | 'local') => {
+    setProviderTypeFilter(type);
+    
+    // Clear current provider selection if it doesn't match the new filter
+    if (selectedProvider && selectedProvider !== 'gemini') {
+      const currentProvider = providers.find(p => p.id === selectedProvider);
+      if (currentProvider && currentProvider.type !== type) {
+        onProviderChange('');
+        onModelChange('');
+        // Clear API key and base URL when switching from remote to local or vice versa
+        if (currentProvider.type === 'remote' && type === 'local') {
+          onApiKeyChange('');
+        } else if (currentProvider.type === 'local' && type === 'remote') {
+          onBaseUrlChange('');
+        }
+      }
+    }
+  };
+
+  // Validate API key when it changes
+  useEffect(() => {
+    if (!selectedProvider || !needsApiKey || !apiKey || apiKey.trim() === '') {
+      setApiKeyValid(null);
+      return;
+    }
+
+    // Prevent multiple simultaneous validations
+    if (validatingApiKey) {
+      return;
+    }
+
+    const validateKey = async () => {
+      setValidatingApiKey(true);
+      try {
+        const result = await validateApiKey(selectedProvider, apiKey);
+        setApiKeyValid(result.valid);
+        if (result.valid) {
+          // Save the API key configuration after successful validation
+          try {
+            await saveProviderConfig({
+              providerId: selectedProvider,
+              apiKey: apiKey,
+            });
+          } catch (error) {
+            console.error('Failed to save API key after validation:', error);
+          }
+        } else {
+          // Clear models if API key is invalid
+          setModels([]);
+          if (selectedModel) {
+            onModelChange('');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to validate API key:', error);
+        setApiKeyValid(false);
+        setModels([]);
+        if (selectedModel) {
+          onModelChange('');
+        }
+      } finally {
+        setValidatingApiKey(false);
+      }
+    };
+
+    // Debounce API key validation to avoid too many requests
+    const timeoutId = setTimeout(validateKey, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [selectedProvider, apiKey, needsApiKey, validatingApiKey]);
 
   // Update models when provider changes or API key is provided
   useEffect(() => {
@@ -85,10 +217,10 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     // Only load models if:
     // 1. It's a local provider (Ollama), OR
     // 2. It's Gemini (built-in), OR
-    // 3. It's a remote provider with API key
+    // 3. It's a remote provider with valid API key
     const shouldLoadModels = isLocalProvider ||
                             selectedProvider === 'gemini' ||
-                            (needsApiKey && apiKey && apiKey.trim() !== '');
+                            (needsApiKey && apiKey && apiKey.trim() !== '' && apiKeyValid === true);
 
     if (!shouldLoadModels) {
       setModels([]);
@@ -100,7 +232,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
 
     const loadModels = async () => {
       try {
-        setLoading(true);
+        setModelsLoading(true);
         const response = await getProviderModels(selectedProvider);
         setModels(response.models);
 
@@ -116,12 +248,14 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
         console.error('Failed to load models:', error);
         setModels([]);
       } finally {
-        setLoading(false);
+        setModelsLoading(false);
       }
     };
 
     loadModels();
-  }, [selectedProvider, apiKey, isLocalProvider, needsApiKey, selectedModel, onModelChange]);
+  }, [selectedProvider, apiKey, isLocalProvider, needsApiKey, apiKeyValid]); // Removed selectedModel and onModelChange
+
+  // Removed redundant effect - apiKeyValid is already in the models loading effect dependency array
 
   // Load model configuration when provider/model changes
   useEffect(() => {
@@ -284,31 +418,86 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     setCurrentProvider(selectedProvider, selectedModel).catch(() => {});
   }, [selectedProvider, selectedModel]);
 
-  return (
+          return (
     <div className="space-y-4">
+
+      
       {/* Provider Subgroup */}
       <CollapsibleGroup title="Provider" defaultExpanded={true} className="collapsible-group-nested">
-        <div className="space-y-4">
+                <div className={`space-y-4 relative transition-opacity duration-200 ${(loading || modelsLoading) ? 'pointer-events-none opacity-50' : ''}`}>
+          {/* Loading Overlay */}
+          {(loading || modelsLoading) && (
+            <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-md">
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-gray-600">
+                  {loading ? 'Loading providers...' : 'Loading models...'}
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Provider Type Toggle - Only show when running locally */}
+          {isLocalEnvironment && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Provider Type</label>
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => handleProviderTypeChange('remote')}
+                  className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    providerTypeFilter === 'remote'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Remote
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleProviderTypeChange('local')}
+                  className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    providerTypeFilter === 'local'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Local
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Currently showing {providerTypeFilter} providers
+              </p>
+            </div>
+          )}
+
           {/* Provider Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">Provider</label>
-            <ConditionalTooltip content="Select the AI provider you want to use. Local providers are only available when running locally.">
+            <ConditionalTooltip content={`Select the AI provider you want to use. ${isLocalEnvironment ? 'Use the buttons above to switch between Remote and Local providers.' : 'Only remote providers are available in cloud environments.'}`}>
               <select
                 value={selectedProvider}
                 onChange={(e) => onProviderChange(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="gemini">Built-In (Google Gemini)</option>
-                {providers?.filter(p => p.id !== 'gemini' && p.available).map(provider => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                )) || []}
-                {providers?.filter(p => p.id !== 'gemini' && !p.available).map(provider => (
+                {/* Only show Built-In for remote providers */}
+                {providerTypeFilter === 'remote' && (
+                  <option value="gemini">Built-In (Google Gemini)</option>
+                )}
+                {filteredProviders
+                  .filter(p => p.id !== 'gemini' && p.available)
+                  .map(provider => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </option>
+                  ))}
+                {filteredProviders.filter(p => p.id !== 'gemini' && !p.available).map(provider => (
                   <option key={provider.id} value={provider.id} disabled>
                     {provider.name} (Not Available)
                   </option>
-                )) || []}
+                ))}
+                {filteredProviders.filter(p => p.id !== 'gemini').length === 0 && (
+                  <option value="">No {providerTypeFilter} providers available</option>
+                )}
               </select>
             </ConditionalTooltip>
           </div>
@@ -344,9 +533,39 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                   value={apiKey}
                   onChange={(e) => onApiKeyChange(e.target.value)}
                   placeholder={`Enter ${selectedProviderInfo?.name} API key`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
+                    apiKeyValid === true ? 'border-green-500' : 
+                    apiKeyValid === false ? 'border-red-500' : 
+                    'border-gray-300'
+                  }`}
                 />
               </ConditionalTooltip>
+              
+              {/* API Key Validation Status */}
+              {needsApiKey && apiKey && apiKey.trim() !== '' && (
+                <div className="flex items-center space-x-2">
+                  {validatingApiKey ? (
+                    <div className="flex items-center space-x-2 text-gray-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
+                      <span className="text-xs">Validating API key...</span>
+                    </div>
+                  ) : apiKeyValid === true ? (
+                    <div className="flex items-center space-x-2 text-green-600">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-xs">API key valid</span>
+                    </div>
+                  ) : apiKeyValid === false ? (
+                    <div className="flex items-center space-x-2 text-red-600">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-xs">Invalid API key</span>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
           )}
 
@@ -365,6 +584,8 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                     <option value="">Loading models...</option>
                   ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
                     <option value="">Enter API Key to select model</option>
+                  ) : needsApiKey && apiKeyValid === false ? (
+                    <option value="">Invalid API key - fix to see models</option>
                   ) : models.length === 0 ? (
                     <option value="">No models available</option>
                   ) : (
@@ -372,7 +593,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                       <option value="">Select Model</option>
                       {models.map(model => (
                         <option key={model.id} value={model.id}>
-                          {model.name} - {model.description}
+                          {model.name}
                         </option>
                       ))}
                     </>
