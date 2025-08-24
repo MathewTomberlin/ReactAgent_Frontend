@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { uploadPdf, clearRag } from '../api/RagClient';
+import { uploadDocument, clearRag, clearRagSource, getSupportedFileTypes, getRagSessionStatus, type SupportedFileTypes, type RagSessionStatus } from '../api/RagClient';
 import { useSettings } from '../context/SettingsContext';
 import { Tooltip } from './Tooltip';
 
@@ -19,19 +19,62 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
   const [files, setFiles] = useState<FileState[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [supportedTypes, setSupportedTypes] = useState<SupportedFileTypes | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<RagSessionStatus | null>(null);
   const { settings } = useSettings();
+
+  // Load supported file types on component mount
+  useEffect(() => {
+    const loadSupportedTypes = async () => {
+      try {
+        const types = await getSupportedFileTypes();
+        setSupportedTypes(types);
+      } catch (error) {
+        console.error('Failed to load supported file types:', error);
+        // Fallback to basic types if API fails
+        setSupportedTypes({
+          extensions: ['pdf', 'txt', 'md', 'csv', 'json', 'xml', 'html'],
+          mimeTypes: ['application/pdf', 'text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/xml', 'text/html'],
+          description: 'Supported file types for document upload'
+        });
+      }
+    };
+    loadSupportedTypes();
+  }, []);
 
   useEffect(() => {
     // reset progress when session changes
     setFiles([]);
+    
+    // Check if session has uploaded documents
+    if (sessionId) {
+      const checkSessionStatus = async () => {
+        try {
+          const status = await getRagSessionStatus(sessionId);
+          setSessionStatus(status);
+        } catch (error) {
+          console.error('Failed to check session status:', error);
+          setSessionStatus(null);
+        }
+      };
+      checkSessionStatus();
+    } else {
+      setSessionStatus(null);
+    }
   }, [sessionId]);
 
   const enqueueFiles = (fileList: FileList) => {
     const toAdd: FileState[] = [];
     Array.from(fileList).forEach((f) => {
-      if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+      // Check if file type is supported
+      const isSupported = supportedTypes?.extensions.some(ext => 
+        f.name.toLowerCase().endsWith(`.${ext}`)
+      ) || supportedTypes?.mimeTypes.includes(f.type);
+      
+      if (!isSupported) {
         return;
       }
+      
       toAdd.push({
         id: `${f.name}-${f.size}-${f.lastModified}-${Math.random().toString(36).slice(2)}`,
         file: f,
@@ -65,14 +108,34 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
         if (files[i].status === 'uploaded') continue;
         setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'uploading', progress: 0 } : f));
         try {
-          const res = await uploadPdf(files[i].file, sessionId, (p) => {
+          const res = await uploadDocument(files[i].file, sessionId, (p) => {
             setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, progress: p } : f));
           });
           setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'uploaded', progress: 100, chunks: res.chunks_added } : f));
+          
+          // Update session status after successful upload
+          if (sessionId) {
+            try {
+              const status = await getRagSessionStatus(sessionId);
+              setSessionStatus(status);
+            } catch (error) {
+              console.error('Failed to update session status:', error);
+            }
+          }
         } catch (err: any) {
           setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'error', error: err?.message || 'Upload failed' } : f));
         }
       }
+      
+      // Clear selected files after successful upload with a short delay
+      setTimeout(() => {
+        setFiles([]);
+        
+        // Reset file input to allow re-selecting the same file
+        if (inputRef.current) {
+          inputRef.current.value = '';
+        }
+      }, 1000); // 2 second delay
     } finally {
       setBusy(false);
     }
@@ -84,6 +147,28 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
     try {
       await clearRag(sessionId);
       setFiles([]);
+      // Update session status after clearing
+      if (sessionId) {
+        const status = await getRagSessionStatus(sessionId);
+        setSessionStatus(status);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearSource = async (sourceName: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await clearRagSource(sourceName, sessionId);
+      // Update session status after clearing individual source
+      if (sessionId) {
+        const status = await getRagSessionStatus(sessionId);
+        setSessionStatus(status);
+      }
+    } catch (error) {
+      console.error('Failed to clear source:', error);
     } finally {
       setBusy(false);
     }
@@ -110,7 +195,7 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={supportedTypes?.extensions.map(ext => `.${ext}`).join(',') || ".pdf,.txt,.md,.csv,.json,.xml,.html,.xlsx,.xls,.docx,.doc"}
           onChange={onFileInput}
           className="hidden"
           multiple
@@ -119,32 +204,26 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4-4m0 0l4 4m-4-4v12" />
           </svg>
-          <span className="text-sm">Drag & drop PDFs here or click to select</span>
+          <span className="text-sm">Drag & drop documents here or click to select</span>
         </div>
-        <div className="text-xs text-gray-500 mt-1">Up to a few PDFs. Only .pdf files are accepted.</div>
+        <div className="text-xs text-gray-500 mt-1">
+          Supported: PDF, Excel (.xlsx, .xls), Word (.docx, .doc), Text (.txt, .md, .csv, .json, .xml, .html)
+        </div>
       </div>
 
+      {/* File selection and upload */}
       {files.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-700">Selected: {files.length} file{files.length > 1 ? 's' : ''}</div>
             <div className="space-x-2">
-              <Tooltip content="Upload the selected PDF files to make their content available for AI responses in this session.">
+              <Tooltip content="Upload the selected documents to make their content available for AI responses in this session.">
                 <button
                   onClick={startUpload}
                   disabled={busy || files.every(f => f.status === 'uploaded')}
                   className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 >
                   {busy ? 'Uploading...' : 'Upload'}
-                </button>
-              </Tooltip>
-              <Tooltip content="Remove all uploaded documents from this session. The AI will no longer have access to their content.">
-                <button
-                  onClick={clearSession}
-                  disabled={busy}
-                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
-                >
-                  Clear Session Docs
                 </button>
               </Tooltip>
             </div>
@@ -174,6 +253,120 @@ export const RagUploader = React.memo(({ sessionId }: { sessionId?: string }) =>
           </ul>
         </div>
       )}
+
+      {/* Session Status - Show uploaded documents info */}
+      {sessionStatus?.hasContext && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="space-y-3">
+            {/* Sources section */}
+            {sessionStatus.sources.length > 0 && (
+              <div className="border border-blue-200 rounded bg-white">
+                <div className="p-3 border-b border-blue-200 bg-blue-25">
+                  <div className="text-sm font-medium text-blue-800 mb-1">Sources</div>
+                  <div className="text-xs text-blue-600">
+                    {sessionStatus.chunkCount} chunks from {sessionStatus.sources.length} document{sessionStatus.sources.length > 1 ? 's' : ''}
+                  </div>
+                </div>
+                <div className="p-3">
+                  <div className="space-y-2">
+                    {sessionStatus.sources.map((source, index) => {
+                      return (
+                        <div key={index} style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: '1fr auto', 
+                          gap: '8px',
+                          alignItems: 'center',
+                          backgroundColor: 'white', 
+                          border: '1px solid #e5e7eb', 
+                          borderRadius: '6px', 
+                          padding: '8px 12px',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          transition: 'box-shadow 0.2s ease',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                        }}>
+                          <div 
+                            style={{ 
+                              color: '#374151', 
+                              fontSize: '13px', 
+                              fontWeight: '500',
+                              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              minWidth: 0,
+                              lineHeight: '1.4'
+                            }}
+                            title={source || 'No filename'}
+                          >
+                            {source || 'No filename'}
+                          </div>
+                          <Tooltip content={`Remove all chunks from ${source}`}>
+                            <button
+                              onClick={() => clearSource(source)}
+                              disabled={busy}
+                              style={{
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '5px 10px',
+                                fontSize: '11px',
+                                fontWeight: '500',
+                                cursor: busy ? 'not-allowed' : 'pointer',
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.2s ease',
+                                opacity: busy ? 0.6 : 1,
+                                transform: 'translateY(0)',
+                                boxShadow: '0 1px 2px rgba(239, 68, 68, 0.2)'
+                              }}
+                              onMouseOver={(e) => {
+                                if (!busy) {
+                                  const btn = e.target as HTMLButtonElement;
+                                  btn.style.backgroundColor = '#dc2626';
+                                  btn.style.transform = 'translateY(-1px)';
+                                  btn.style.boxShadow = '0 2px 4px rgba(220, 38, 38, 0.3)';
+                                }
+                              }}
+                              onMouseOut={(e) => {
+                                if (!busy) {
+                                  const btn = e.target as HTMLButtonElement;
+                                  btn.style.backgroundColor = '#ef4444';
+                                  btn.style.transform = 'translateY(0)';
+                                  btn.style.boxShadow = '0 1px 2px rgba(239, 68, 68, 0.2)';
+                                }
+                              }}
+                            >
+                              Clear
+                            </button>
+                          </Tooltip>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Clear All button */}
+            <div className="flex justify-center">
+              <Tooltip content="Remove all uploaded documents from this session. The AI will no longer have access to their content.">
+                <button
+                  onClick={clearSession}
+                  disabled={busy}
+                  className="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  Clear All Documents
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+
 
       {settings.displayMessageTokens && (
         <div className="text-xs text-gray-500">Note: Uploaded docs are used only within your current session to keep costs near zero.</div>

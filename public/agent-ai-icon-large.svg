@@ -1,0 +1,56 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background circle -->
+  <circle cx="256" cy="256" r="240" fill="#1F2937" stroke="#6B7280" stroke-width="16"/>
+  
+  <!-- Microchip base - dark with light border -->
+  <rect x="144" y="160" width="224" height="192" fill="#374151" stroke="#D1D5DB" stroke-width="12" rx="16"/>
+  
+  <!-- Circuit traces - light lines -->
+  <path d="M176 192 L336 192" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M176 224 L336 224" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M176 256 L336 256" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M176 288 L336 288" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M176 320 L336 320" stroke="#F3F4F6" stroke-width="12"/>
+  
+  <!-- Vertical circuit connections -->
+  <path d="M208 160 L208 352" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M240 160 L240 352" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M272 160 L272 352" stroke="#F3F4F6" stroke-width="12"/>
+  <path d="M304 160 L304 352" stroke="#F3F4F6" stroke-width="12"/>
+  
+  <!-- Central processing unit - bright accent -->
+  <rect x="208" y="208" width="96" height="96" fill="#F59E0B" stroke="#FCD34D" stroke-width="8" rx="8"/>
+  
+  <!-- CPU internal circuit pattern -->
+  <path d="M224 224 L288 224" stroke="#1F2937" stroke-width="8"/>
+  <path d="M224 240 L288 240" stroke="#1F2937" stroke-width="8"/>
+  <path d="M224 256 L288 256" stroke="#1F2937" stroke-width="8"/>
+  <path d="M224 272 L288 272" stroke="#1F2937" stroke-width="8"/>
+  <path d="M224 288 L288 288" stroke="#1F2937" stroke-width="8"/>
+  
+  <!-- Connection pins - light dots -->
+  <circle cx="144" cy="176" r="8" fill="#F3F4F6"/>
+  <circle cx="144" cy="208" r="8" fill="#F3F4F6"/>
+  <circle cx="144" cy="240" r="8" fill="#F3F4F6"/>
+  <circle cx="144" cy="272" r="8" fill="#F3F4F6"/>
+  <circle cx="144" cy="304" r="8" fill="#F3F4F6"/>
+  <circle cx="144" cy="336" r="8" fill="#F3F4F6"/>
+  
+  <circle cx="368" cy="176" r="8" fill="#F3F4F6"/>
+  <circle cx="368" cy="208" r="8" fill="#F3F4F6"/>
+  <circle cx="368" cy="240" r="8" fill="#F3F4F6"/>
+  <circle cx="368" cy="272" r="8" fill="#F3F4F6"/>
+  <circle cx="368" cy="304" r="8" fill="#F3F4F6"/>
+  <circle cx="368" cy="336" r="8" fill="#F3F4F6"/>
+  
+  <!-- Data flow indicators - bright green -->
+  <path d="M128 256 L144 256" stroke="#10B981" stroke-width="16" marker-end="url(#arrowhead)"/>
+  <path d="M368 256 L384 256" stroke="#10B981" stroke-width="16" marker-end="url(#arrowhead)"/>
+  
+  <!-- Arrow marker definition -->
+  <defs>
+    <marker id="arrowhead" markerWidth="48" markerHeight="32" refX="48" refY="16" orient="auto">
+      <polygon points="0 0, 48 16, 0 32" fill="#10B981"/>
+    </marker>
+  </defs>
+</svg>

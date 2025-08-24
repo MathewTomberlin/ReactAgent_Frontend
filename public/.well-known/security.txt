@@ -1,0 +1,5 @@
+Contact: mailto:security@agentagent.ai
+Expires: 2025-12-31T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://agentagent.ai/.well-known/security.txt
+Policy: https://agentagent.ai/security-policy
