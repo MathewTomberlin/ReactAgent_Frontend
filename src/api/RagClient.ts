@@ -27,7 +27,7 @@ export interface UploadResult {
   source: string;
 }
 
-export const uploadPdf = async (
+export const uploadDocument = async (
   file: File,
   sessionId?: string,
   onProgress?: (percent: number) => void
@@ -48,10 +48,47 @@ export const uploadPdf = async (
   return data as UploadResult;
 };
 
+// Legacy function for backward compatibility
+export const uploadPdf = uploadDocument;
+
+export interface SupportedFileTypes {
+  extensions: string[];
+  mimeTypes: string[];
+  description: string;
+}
+
+export interface RagSessionStatus {
+  sessionId: string;
+  hasContext: boolean;
+  chunkCount: number;
+  sources: string[];
+}
+
+export const getSupportedFileTypes = async (): Promise<SupportedFileTypes> => {
+  const url = new URL(`${BASE_URL}/rag/supported-types`);
+  const { data } = await axios.get(url.toString(), { headers: { 'X-Client-Id': getClientId() } });
+  return data as SupportedFileTypes;
+};
+
+export const getRagSessionStatus = async (sessionId?: string): Promise<RagSessionStatus> => {
+  const url = new URL(`${BASE_URL}/rag/status`);
+  if (sessionId) url.searchParams.set('sessionId', sessionId);
+  const { data } = await axios.get(url.toString(), { headers: { 'X-Client-Id': getClientId() } });
+  return data as RagSessionStatus;
+};
+
 export const clearRag = async (sessionId?: string): Promise<void> => {
   const url = new URL(`${BASE_URL}/rag/clear`);
   if (sessionId) url.searchParams.set('sessionId', sessionId);
   await axios.delete(url.toString(), { headers: { 'X-Client-Id': getClientId() } });
+};
+
+export const clearRagSource = async (sourceName: string, sessionId?: string): Promise<{ sessionId: string; sourceName: string; chunksRemoved: number }> => {
+  const url = new URL(`${BASE_URL}/rag/clear-source`);
+  url.searchParams.set('sourceName', sourceName);
+  if (sessionId) url.searchParams.set('sessionId', sessionId);
+  const { data } = await axios.delete(url.toString(), { headers: { 'X-Client-Id': getClientId() } });
+  return data;
 };
 
 

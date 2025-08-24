@@ -533,7 +533,7 @@ function App() {
 
               {/* Knowledge - PDF Upload */}
               <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
-                <RagUploader />
+                <RagUploader sessionId={sessionId} />
               </CollapsibleGroup>
 
               {/* Memory */}
@@ -818,7 +818,7 @@ function App() {
 
                 {/* Knowledge - PDF Upload (mobile) */}
                 <CollapsibleGroup title="Knowledge" defaultExpanded={false} className="collapsible-group-top">
-                  <RagUploader />
+                  <RagUploader sessionId={sessionId} />
                 </CollapsibleGroup>
 
                 {/* Memory - Mobile */}
