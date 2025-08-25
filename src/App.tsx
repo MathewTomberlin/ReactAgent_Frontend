@@ -11,6 +11,7 @@ import { ChatSystemPrompts } from './components/ChatSystemPrompts'
 import { initializeMobileViewport } from './utils/mobileViewport'
 import { ConditionalTooltip } from './utils/uiUtils'
 import { PromptTextarea } from './components/PromptTextarea'
+import { TokenCountDisplay } from './components/TokenCountDisplay'
 import { getProviders, type Provider } from './api/ProviderClient'
 
 
@@ -930,6 +931,8 @@ function App() {
 
         {/* Input Area - Fixed at Bottom */}
         <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0 bottom-0 z-20 mobile-input">
+          {/* Token Count Display */}
+          <TokenCountDisplay currentPrompt={input} />
           <div className="flex items-end space-x-3">
             <div className="flex-1 relative">
               {/* Desktop Input */}
