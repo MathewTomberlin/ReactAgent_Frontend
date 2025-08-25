@@ -48,7 +48,16 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
   const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null);
   const [validatingApiKey, setValidatingApiKey] = useState(false);
   const [isLocalEnvironment, setIsLocalEnvironment] = useState(false);
-  const [providerTypeFilter, setProviderTypeFilter] = useState<'remote' | 'local'>('remote');
+  const [providerTypeFilter, setProviderTypeFilter] = useState<'remote' | 'local'>(() => {
+    // Load saved filter type from localStorage, default to 'remote'
+    return (localStorage.getItem('providerTypeFilter') as 'remote' | 'local') || 'remote';
+  });
+  const hasLoadedInitialConfig = useRef(false);
+
+  // Save provider type filter to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('providerTypeFilter', providerTypeFilter);
+  }, [providerTypeFilter]);
 
   // Load providers from API
   useEffect(() => {
@@ -132,31 +141,135 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     // Built-In (gemini) is always treated as remote, not local
     const isLocalProvider = selectedProviderInfo?.type?.toLowerCase() === 'local';
     const needsApiKey: boolean = !!(selectedProvider && !isLocalProvider && selectedProvider !== 'gemini');
+    
     return { selectedProviderInfo, isLocalProvider, needsApiKey };
   }, [providers, selectedProvider]);
 
   const { selectedProviderInfo, isLocalProvider, needsApiKey } = providerInfo;
 
+  // Enhanced provider URL visibility logic
+  const shouldShowProviderUrl = useMemo(() => {
+    // Show provider URL if:
+    // 1. We're in local filter mode (regardless of provider selection), OR
+    // 2. We have a selected provider that is local
+    const shouldShow = providerTypeFilter === 'local' || 
+           (selectedProvider && isLocalProvider);
+    
+    // Debug logging
+    console.log('Provider URL visibility check:', {
+      selectedProvider,
+      isLocalProvider,
+      providerTypeFilter,
+      shouldShow,
+      providers: providers?.map(p => ({ id: p.id, type: p.type, available: p.available }))
+    });
+    
+    return shouldShow;
+  }, [selectedProvider, isLocalProvider, providerTypeFilter, providers]);
 
+  // Enhanced model loading logic
+  const shouldLoadModels = useMemo(() => {
+    if (!selectedProvider) return false;
+    
+    // Load models if:
+    // 1. It's a local provider (Ollama), OR
+    // 2. It's Gemini (built-in), OR
+    // 3. It's a remote provider with valid API key
+    const shouldLoad = isLocalProvider ||
+           selectedProvider === 'gemini' ||
+           (needsApiKey && apiKey && apiKey.trim() !== '' && apiKeyValid === true);
+    
+    // Debug logging
+    console.log('Model loading check:', {
+      selectedProvider,
+      isLocalProvider,
+      needsApiKey,
+      apiKey: apiKey ? '***' : '',
+      apiKeyValid,
+      shouldLoad
+    });
+    
+    return shouldLoad;
+  }, [selectedProvider, isLocalProvider, needsApiKey, apiKey, apiKeyValid]);
 
   // Handle provider type filter change
   const handleProviderTypeChange = (type: 'remote' | 'local') => {
-    setProviderTypeFilter(type);
+    console.log('Provider type filter change:', {
+      from: providerTypeFilter,
+      to: type,
+      selectedProvider,
+      providers: providers?.map(p => ({ id: p.id, type: p.type }))
+    });
     
-    // Clear current provider selection if it doesn't match the new filter
-    if (selectedProvider && selectedProvider !== 'gemini') {
+    // Get available providers in the new filter type
+    const availableProvidersInNewFilter = providers.filter(p => p.type === type && p.available);
+    
+    console.log('Provider availability check:', {
+      selectedProvider,
+      availableProvidersInNewFilter: availableProvidersInNewFilter.map(p => p.id),
+      switchingToLocal: type === 'local'
+    });
+    
+    // Check if current provider is available in the new filter type
+    if (selectedProvider) {
       const currentProvider = providers.find(p => p.id === selectedProvider);
-      if (currentProvider && currentProvider.type !== type) {
+      
+      // Clear selection if current provider is not available in the new filter type
+      if (!currentProvider || currentProvider.type !== type || !currentProvider.available) {
+        console.log('Clearing provider selection - not available in new filter');
+        
+        // Clear API key and base URL when switching between remote and local
+        if (currentProvider) {
+          if (currentProvider.type === 'remote' && type === 'local') {
+            onApiKeyChange('');
+          } else if (currentProvider.type === 'local' && type === 'remote') {
+            onBaseUrlChange('');
+          }
+        }
+        
+        // Clear current selections
         onProviderChange('');
         onModelChange('');
-        // Clear API key and base URL when switching from remote to local or vice versa
-        if (currentProvider.type === 'remote' && type === 'local') {
-          onApiKeyChange('');
-        } else if (currentProvider.type === 'local' && type === 'remote') {
-          onBaseUrlChange('');
+        
+        // Auto-select a provider immediately after clearing
+        if (availableProvidersInNewFilter.length > 0) {
+          // Prioritize built-in provider when switching to remote mode
+          let providerToSelect = availableProvidersInNewFilter[0];
+          if (type === 'remote') {
+            const builtInProvider = availableProvidersInNewFilter.find(p => p.id === 'gemini');
+            if (builtInProvider) {
+              providerToSelect = builtInProvider;
+            }
+          }
+          
+          console.log('Auto-selecting provider after clearing:', providerToSelect.id);
+          // Use setTimeout to ensure the state updates happen in the correct order
+          setTimeout(() => {
+            onProviderChange(providerToSelect.id);
+          }, 0);
         }
+      } else {
+        console.log('Keeping current provider selection - available in new filter');
       }
-    }
+         } else {
+       // No provider currently selected, auto-select one
+       if (availableProvidersInNewFilter.length > 0) {
+         // Prioritize built-in provider when switching to remote mode
+         let providerToSelect = availableProvidersInNewFilter[0];
+         if (type === 'remote') {
+           const builtInProvider = availableProvidersInNewFilter.find(p => p.id === 'gemini');
+           if (builtInProvider) {
+             providerToSelect = builtInProvider;
+           }
+         }
+         
+         console.log('Auto-selecting provider (no current selection):', providerToSelect.id);
+         onProviderChange(providerToSelect.id);
+       }
+     }
+    
+    // Update the filter type
+    setProviderTypeFilter(type);
   };
 
   // Validate API key when it changes
@@ -212,16 +325,13 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
 
   // Update models when provider changes or API key is provided
   useEffect(() => {
-    if (!selectedProvider) return;
-
-    // Only load models if:
-    // 1. It's a local provider (Ollama), OR
-    // 2. It's Gemini (built-in), OR
-    // 3. It's a remote provider with valid API key
-    const shouldLoadModels = isLocalProvider ||
-                            selectedProvider === 'gemini' ||
-                            (needsApiKey && apiKey && apiKey.trim() !== '' && apiKeyValid === true);
-
+    console.log('Model loading effect running:', {
+      shouldLoadModels,
+      selectedProvider,
+      selectedModel,
+      modelsCount: models.length
+    });
+    
     if (!shouldLoadModels) {
       setModels([]);
       if (selectedModel) {
@@ -233,13 +343,20 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     const loadModels = async () => {
       try {
         setModelsLoading(true);
+        console.log('Loading models for provider:', selectedProvider);
         const response = await getProviderModels(selectedProvider);
+        console.log('Models loaded:', response.models);
         setModels(response.models);
 
         // Auto-select first model if none selected or if switching providers
         if (response.models.length > 0) {
           // If no model is selected, or if the current model is not in the new list, select the first one
           const currentModelExists = selectedModel && response.models.some(m => m.id === selectedModel);
+          console.log('Model selection check:', {
+            selectedModel,
+            currentModelExists,
+            firstModel: response.models[0]?.id
+          });
           if (!currentModelExists) {
             onModelChange(response.models[0].id);
           }
@@ -253,9 +370,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     };
 
     loadModels();
-  }, [selectedProvider, apiKey, isLocalProvider, needsApiKey, apiKeyValid]); // Removed selectedModel and onModelChange
-
-  // Removed redundant effect - apiKeyValid is already in the models loading effect dependency array
+  }, [shouldLoadModels, selectedProvider, selectedModel, onModelChange]);
 
   // Load model configuration when provider/model changes
   useEffect(() => {
@@ -341,13 +456,62 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     loadModelConfig();
   }, [selectedProvider, selectedModel]);
 
-  // Load current provider configuration on mount
+  // Load current provider configuration on mount - only run once
   useEffect(() => {
+    console.log('loadCurrentConfig effect running:', {
+      hasLoadedInitialConfig: hasLoadedInitialConfig.current,
+      providers: providers?.length,
+      selectedProvider,
+      selectedModel
+    });
+    
+    // Only run this effect once on mount
+    if (hasLoadedInitialConfig.current) {
+      return;
+    }
+
     const loadCurrentConfig = async () => {
       try {
         const current = await getCurrentProvider();
-        onProviderChange(current.providerId);
-        onModelChange(current.modelId);
+        console.log('loadCurrentConfig called:', {
+          current,
+          selectedProvider,
+          selectedModel,
+          providerTypeFilter,
+          willUpdateProvider: !selectedProvider,
+          willUpdateModel: !selectedModel
+        });
+        
+        // Check if the saved provider is available in the current filter type
+        const savedProvider = providers.find(p => p.id === current.providerId);
+        const isSavedProviderInCurrentFilter = savedProvider && savedProvider.type === providerTypeFilter;
+        
+        if (!selectedProvider) {
+          if (isSavedProviderInCurrentFilter) {
+            // Use the saved provider if it's available in the current filter
+            onProviderChange(current.providerId);
+          } else {
+            // Auto-select a provider from the current filter type
+            const availableProvidersInFilter = providers.filter(p => p.type === providerTypeFilter && p.available);
+            if (availableProvidersInFilter.length > 0) {
+              // Prioritize built-in provider when switching to remote mode
+              let providerToSelect = availableProvidersInFilter[0];
+              if (providerTypeFilter === 'remote') {
+                const builtInProvider = availableProvidersInFilter.find(p => p.id === 'gemini');
+                if (builtInProvider) {
+                  providerToSelect = builtInProvider;
+                }
+              }
+              console.log('Auto-selecting provider for filter type:', providerToSelect.id);
+              onProviderChange(providerToSelect.id);
+            }
+          }
+        }
+        
+        if (!selectedModel) {
+          onModelChange(current.modelId);
+        }
+        
         try {
           localStorage.setItem('currentProviderId', current.providerId || '');
           localStorage.setItem('currentModelId', current.modelId || '');
@@ -357,10 +521,14 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
       }
     };
 
-    if (providers && providers.length > 0) {
+    // Only load config if we have providers and no current selection
+    if (providers && providers.length > 0 && (!selectedProvider || !selectedModel)) {
       loadCurrentConfig();
+      hasLoadedInitialConfig.current = true;
     }
-  }, [providers, onProviderChange, onModelChange]);
+  }, [providers, providerTypeFilter, onProviderChange, onModelChange]); // Added providerTypeFilter to dependencies
+
+
 
   // Save configuration when it changes
   const saveConfig = async () => {
@@ -418,13 +586,11 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     setCurrentProvider(selectedProvider, selectedModel).catch(() => {});
   }, [selectedProvider, selectedModel]);
 
-          return (
+  return (
     <div className="space-y-4">
-
-      
       {/* Provider Subgroup */}
       <CollapsibleGroup title="Provider" defaultExpanded={true} className="collapsible-group-nested">
-                <div className={`space-y-4 relative transition-opacity duration-200 ${(loading || modelsLoading) ? 'pointer-events-none opacity-50' : ''}`}>
+        <div className={`space-y-4 relative transition-opacity duration-200 ${(loading || modelsLoading) ? 'pointer-events-none opacity-50' : ''}`}>
           {/* Loading Overlay */}
           {(loading || modelsLoading) && (
             <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center rounded-md">
@@ -436,6 +602,7 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
               </div>
             </div>
           )}
+          
           {/* Provider Type Toggle - Only show when running locally */}
           {isLocalEnvironment && (
             <div className="space-y-2">
@@ -502,26 +669,32 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
             </ConditionalTooltip>
           </div>
 
-          {/* Provider URL - for local providers */}
-          {selectedProvider && isLocalProvider && selectedProvider !== 'gemini' && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Provider URL</label>
-              <ConditionalTooltip content="The URL where your local LLM server is running.">
-                <input
-                  type="text"
-                  value={baseUrl || (selectedProvider === 'ollama' ? 'http://localhost:11434' : '')}
-                  onChange={(e) => onBaseUrlChange(e.target.value)}
-                  placeholder={selectedProvider === 'ollama' ? 'http://localhost:11434' : 'http://localhost:port'}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </ConditionalTooltip>
-              {selectedProvider === 'ollama' && (
-                <p className="text-xs text-gray-500">
-                  Default Ollama installation runs on http://localhost:11434
-                </p>
-              )}
-            </div>
-          )}
+                     {/* Provider URL - for local providers */}
+           {shouldShowProviderUrl && (
+             <div className="space-y-2">
+               <label className="text-sm font-medium text-gray-700">Provider URL</label>
+               <ConditionalTooltip content="The URL where your local LLM server is running.">
+                 <input
+                   type="text"
+                   value={baseUrl || (selectedProvider === 'ollama' ? 'http://localhost:11434' : '')}
+                   onChange={(e) => onBaseUrlChange(e.target.value)}
+                   placeholder={selectedProvider === 'ollama' ? 'http://localhost:11434' : 
+                              providerTypeFilter === 'local' ? 'http://localhost:port' : 'http://localhost:port'}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                 />
+               </ConditionalTooltip>
+               {selectedProvider === 'ollama' && (
+                 <p className="text-xs text-gray-500">
+                   Default Ollama installation runs on http://localhost:11434
+                 </p>
+               )}
+               {providerTypeFilter === 'local' && !selectedProvider && (
+                 <p className="text-xs text-gray-500">
+                   Select a local provider above to configure its URL
+                 </p>
+               )}
+             </div>
+           )}
 
           {/* API Key Configuration - for remote providers */}
           {needsApiKey && (
@@ -569,43 +742,43 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
             </div>
           )}
 
-          {/* Model Selection */}
-          {selectedProvider && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Model</label>
-              <ConditionalTooltip content="Select the specific model to use from the selected provider.">
-                <select
-                  value={selectedModel}
-                  onChange={(e) => onModelChange(e.target.value)}
-                  disabled={loading || (needsApiKey && (!apiKey || apiKey.trim() === ''))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                >
-                  {loading ? (
-                    <option value="">Loading models...</option>
-                  ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
-                    <option value="">Enter API Key to select model</option>
-                  ) : needsApiKey && apiKeyValid === false ? (
-                    <option value="">Invalid API key - fix to see models</option>
-                  ) : models.length === 0 ? (
-                    <option value="">No models available</option>
-                  ) : (
-                    <>
-                      <option value="">Select Model</option>
-                      {models.map(model => (
-                        <option key={model.id} value={model.id}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-              </ConditionalTooltip>
-            </div>
-          )}
+                     {/* Model Selection */}
+           {(selectedProvider || providerTypeFilter === 'local') && (
+             <div className="space-y-2">
+               <label className="text-sm font-medium text-gray-700">Model</label>
+               <ConditionalTooltip content="Select the specific model to use from the selected provider.">
+                 <select
+                   value={selectedModel}
+                   onChange={(e) => onModelChange(e.target.value)}
+                   disabled={loading || !selectedProvider || (needsApiKey && (!apiKey || apiKey.trim() === ''))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                 >
+                   {!selectedProvider ? (
+                     <option value="">Select a provider above to see models</option>
+                   ) : loading ? (
+                     <option value="">Loading models...</option>
+                   ) : needsApiKey && (!apiKey || apiKey.trim() === '') ? (
+                     <option value="">Enter API Key to select model</option>
+                   ) : needsApiKey && apiKeyValid === false ? (
+                     <option value="">Invalid API key - fix to see models</option>
+                   ) : models.length === 0 ? (
+                     <option value="">No models available</option>
+                   ) : (
+                     <>
+                       <option value="">Select Model</option>
+                       {models.map(model => (
+                         <option key={model.id} value={model.id}>
+                           {model.name}
+                         </option>
+                       ))}
+                     </>
+                   )}
+                 </select>
+               </ConditionalTooltip>
+             </div>
+           )}
         </div>
       </CollapsibleGroup>
-
-
 
       {/* Built-in provider notice */}
       {selectedProvider === 'gemini' && (
