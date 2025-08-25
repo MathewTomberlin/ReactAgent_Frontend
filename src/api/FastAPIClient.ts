@@ -177,6 +177,16 @@ export const streamChat = (
   if (params.systemPrompt) url.searchParams.set('systemPrompt', params.systemPrompt);
   if (typeof params.unloadAfterCall === 'boolean') url.searchParams.set('unloadAfterCall', String(params.unloadAfterCall));
 
+  // Add provider selection from localStorage
+  try {
+    const providerId = localStorage.getItem('currentProviderId');
+    const modelId = localStorage.getItem('currentModelId');
+    if (providerId) url.searchParams.set('providerId', providerId);
+    if (modelId) url.searchParams.set('modelId', modelId);
+  } catch (error) {
+    console.warn('Failed to get provider selection from localStorage:', error);
+  }
+
   url.searchParams.set('clientId', getClientId());
   const es = new EventSource(url.toString());
   

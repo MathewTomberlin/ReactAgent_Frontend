@@ -155,15 +155,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     const shouldShow = providerTypeFilter === 'local' || 
            (selectedProvider && isLocalProvider);
     
-    // Debug logging
-    console.log('Provider URL visibility check:', {
-      selectedProvider,
-      isLocalProvider,
-      providerTypeFilter,
-      shouldShow,
-      providers: providers?.map(p => ({ id: p.id, type: p.type, available: p.available }))
-    });
-    
     return shouldShow;
   }, [selectedProvider, isLocalProvider, providerTypeFilter, providers]);
 
@@ -179,36 +170,13 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
            selectedProvider === 'gemini' ||
            (needsApiKey && apiKey && apiKey.trim() !== '' && apiKeyValid === true);
     
-    // Debug logging
-    console.log('Model loading check:', {
-      selectedProvider,
-      isLocalProvider,
-      needsApiKey,
-      apiKey: apiKey ? '***' : '',
-      apiKeyValid,
-      shouldLoad
-    });
-    
     return shouldLoad;
   }, [selectedProvider, isLocalProvider, needsApiKey, apiKey, apiKeyValid]);
 
   // Handle provider type filter change
   const handleProviderTypeChange = (type: 'remote' | 'local') => {
-    console.log('Provider type filter change:', {
-      from: providerTypeFilter,
-      to: type,
-      selectedProvider,
-      providers: providers?.map(p => ({ id: p.id, type: p.type }))
-    });
-    
     // Get available providers in the new filter type
     const availableProvidersInNewFilter = providers.filter(p => p.type === type && p.available);
-    
-    console.log('Provider availability check:', {
-      selectedProvider,
-      availableProvidersInNewFilter: availableProvidersInNewFilter.map(p => p.id),
-      switchingToLocal: type === 'local'
-    });
     
     // Check if current provider is available in the new filter type
     if (selectedProvider) {
@@ -216,8 +184,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
       
       // Clear selection if current provider is not available in the new filter type
       if (!currentProvider || currentProvider.type !== type || !currentProvider.available) {
-        console.log('Clearing provider selection - not available in new filter');
-        
         // Clear API key and base URL when switching between remote and local
         if (currentProvider) {
           if (currentProvider.type === 'remote' && type === 'local') {
@@ -242,35 +208,47 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
             }
           }
           
-          console.log('Auto-selecting provider after clearing:', providerToSelect.id);
           // Use setTimeout to ensure the state updates happen in the correct order
           setTimeout(() => {
             onProviderChange(providerToSelect.id);
           }, 0);
         }
-      } else {
-        console.log('Keeping current provider selection - available in new filter');
       }
-         } else {
-       // No provider currently selected, auto-select one
-       if (availableProvidersInNewFilter.length > 0) {
-         // Prioritize built-in provider when switching to remote mode
-         let providerToSelect = availableProvidersInNewFilter[0];
-         if (type === 'remote') {
-           const builtInProvider = availableProvidersInNewFilter.find(p => p.id === 'gemini');
-           if (builtInProvider) {
-             providerToSelect = builtInProvider;
-           }
-         }
-         
-         console.log('Auto-selecting provider (no current selection):', providerToSelect.id);
-         onProviderChange(providerToSelect.id);
-       }
-     }
+    } else {
+      // No provider currently selected, auto-select one
+      if (availableProvidersInNewFilter.length > 0) {
+        // Prioritize built-in provider when switching to remote mode
+        let providerToSelect = availableProvidersInNewFilter[0];
+        if (type === 'remote') {
+          const builtInProvider = availableProvidersInNewFilter.find(p => p.id === 'gemini');
+          if (builtInProvider) {
+            providerToSelect = builtInProvider;
+          }
+        }
+        
+        onProviderChange(providerToSelect.id);
+      }
+    }
     
     // Update the filter type
     setProviderTypeFilter(type);
   };
+
+  // API key validation cache to prevent repeated calls
+  const apiKeyValidationCache = useRef<Map<string, { valid: boolean; timestamp: number }>>(new Map());
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Clear cache when provider changes
+  useEffect(() => {
+    // Clear cache entries for the previous provider
+    const cacheKeysToRemove: string[] = [];
+    apiKeyValidationCache.current.forEach((_, key) => {
+      if (!key.startsWith(selectedProvider + ':')) {
+        cacheKeysToRemove.push(key);
+      }
+    });
+    cacheKeysToRemove.forEach(key => apiKeyValidationCache.current.delete(key));
+  }, [selectedProvider]);
 
   // Validate API key when it changes
   useEffect(() => {
@@ -284,11 +262,25 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
       return;
     }
 
+    // Check cache first
+    const cacheKey = `${selectedProvider}:${apiKey}`;
+    const cachedResult = apiKeyValidationCache.current.get(cacheKey);
+    const now = Date.now();
+    
+    if (cachedResult && (now - cachedResult.timestamp) < CACHE_DURATION) {
+      setApiKeyValid(cachedResult.valid);
+      return;
+    }
+
     const validateKey = async () => {
       setValidatingApiKey(true);
       try {
         const result = await validateApiKey(selectedProvider, apiKey);
         setApiKeyValid(result.valid);
+        
+        // Cache the result
+        apiKeyValidationCache.current.set(cacheKey, { valid: result.valid, timestamp: now });
+        
         if (result.valid) {
           // Save the API key configuration after successful validation
           try {
@@ -321,17 +313,10 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     // Debounce API key validation to avoid too many requests
     const timeoutId = setTimeout(validateKey, 1000);
     return () => clearTimeout(timeoutId);
-  }, [selectedProvider, apiKey, needsApiKey, validatingApiKey]);
+  }, [selectedProvider, apiKey]); // Removed needsApiKey and validatingApiKey from dependencies
 
   // Update models when provider changes or API key is provided
   useEffect(() => {
-    console.log('Model loading effect running:', {
-      shouldLoadModels,
-      selectedProvider,
-      selectedModel,
-      modelsCount: models.length
-    });
-    
     if (!shouldLoadModels) {
       setModels([]);
       if (selectedModel) {
@@ -343,20 +328,13 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     const loadModels = async () => {
       try {
         setModelsLoading(true);
-        console.log('Loading models for provider:', selectedProvider);
         const response = await getProviderModels(selectedProvider);
-        console.log('Models loaded:', response.models);
         setModels(response.models);
 
         // Auto-select first model if none selected or if switching providers
         if (response.models.length > 0) {
           // If no model is selected, or if the current model is not in the new list, select the first one
           const currentModelExists = selectedModel && response.models.some(m => m.id === selectedModel);
-          console.log('Model selection check:', {
-            selectedModel,
-            currentModelExists,
-            firstModel: response.models[0]?.id
-          });
           if (!currentModelExists) {
             onModelChange(response.models[0].id);
           }
@@ -458,13 +436,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
 
   // Load current provider configuration on mount - only run once
   useEffect(() => {
-    console.log('loadCurrentConfig effect running:', {
-      hasLoadedInitialConfig: hasLoadedInitialConfig.current,
-      providers: providers?.length,
-      selectedProvider,
-      selectedModel
-    });
-    
     // Only run this effect once on mount
     if (hasLoadedInitialConfig.current) {
       return;
@@ -473,14 +444,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
     const loadCurrentConfig = async () => {
       try {
         const current = await getCurrentProvider();
-        console.log('loadCurrentConfig called:', {
-          current,
-          selectedProvider,
-          selectedModel,
-          providerTypeFilter,
-          willUpdateProvider: !selectedProvider,
-          willUpdateModel: !selectedModel
-        });
         
         // Check if the saved provider is available in the current filter type
         const savedProvider = providers.find(p => p.id === current.providerId);
@@ -502,7 +465,6 @@ export const ModelSelection: React.FC<ModelSelectionProps> = React.memo(({
                   providerToSelect = builtInProvider;
                 }
               }
-              console.log('Auto-selecting provider for filter type:', providerToSelect.id);
               onProviderChange(providerToSelect.id);
             }
           }
